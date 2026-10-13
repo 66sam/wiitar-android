@@ -207,6 +207,12 @@ gamepad named **"Wiitar Guitar"** through `/dev/uhid`:
 
 No fret uses B, because Android turns an unhandled `BUTTON_B` into Back.
 
+While the bridge runs, it takes exclusive access (`EVIOCGRAB`, through a small
+JNI library) to the guitar's own input device, so games only see "Wiitar
+Guitar". On the Odin 3, Clone Hero otherwise binds the Odin's copy of the
+guitar, which sends `BUTTON_C`/`BUTTON_Z` for red and orange. Clone Hero can't
+bind those. The kernel releases the grab when the bridge stops.
+
 On the Odin 3, the system app `com.odin.mapping` hides the kernel guitar
 device (the one with whammy) and republishes it without whammy. So on that
 device the bridge has frets, strum, tilt and touch strip, but no whammy. In

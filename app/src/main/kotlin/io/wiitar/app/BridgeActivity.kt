@@ -36,6 +36,7 @@ class BridgeActivity : Activity() {
     private lateinit var statusView: TextView
     private lateinit var tiltAxisGroup: RadioGroup
     private lateinit var tiltInvert: CheckBox
+    private lateinit var hideGuitar: CheckBox
     private lateinit var calibrationView: TextView
     private var capturedRest: Vec3? = null
     private lateinit var layoutWarning: TextView
@@ -70,7 +71,8 @@ class BridgeActivity : Activity() {
                 val invert = tiltInvert.isChecked
                 val calibration = savedCalibration()
                 val layout = savedLayout()
-                background { s.start(axis, invert, calibration, layout) }
+                val hide = hideGuitar.isChecked
+                background { s.start(axis, invert, calibration, layout, hide) }
             }
         }
 
@@ -147,6 +149,12 @@ class BridgeActivity : Activity() {
         tiltInvert = CheckBox(this).apply { text = "Invert tilt"; isChecked = prefs.getBoolean("tiltInvert", false) }
         column.addView(tiltInvert)
 
+        hideGuitar = CheckBox(this).apply {
+            text = "Hide the guitar's own device from games while the bridge runs (recommended; " +
+                "otherwise games may bind it instead of \"Wiitar Guitar\"). Applies on next start."
+            isChecked = prefs.getBoolean("hideGuitar", true)
+        }
+        column.addView(hideGuitar)
         column.button("Start bridge") { start() }
         column.button("Stop bridge") { stop() }
         column.button("Copy status") { copyToClipboard("wiitar bridge", statusView.text.toString()) }
@@ -167,6 +175,7 @@ class BridgeActivity : Activity() {
         getSharedPreferences("bridge", MODE_PRIVATE).edit()
             .putInt("tiltAxis", tiltAxisGroup.checkedRadioButtonId)
             .putBoolean("tiltInvert", tiltInvert.isChecked)
+            .putBoolean("hideGuitar", hideGuitar.isChecked)
             .apply()
         super.onPause()
     }
@@ -183,7 +192,8 @@ class BridgeActivity : Activity() {
             val invert = tiltInvert.isChecked
             val calibration = savedCalibration()
             val layout = savedLayout()
-            background { s.start(axis, invert, calibration, layout) }
+            val hide = hideGuitar.isChecked
+            background { s.start(axis, invert, calibration, layout, hide) }
             return
         }
         startWhenConnected = true
@@ -334,7 +344,7 @@ class BridgeActivity : Activity() {
 
     private companion object {
         const val REQUEST_SHIZUKU = 43
-        const val SERVICE_VERSION = 5 // bump whenever BridgeService changes so Shizuku restarts the running daemon
+        const val SERVICE_VERSION = 6 // bump whenever BridgeService changes so Shizuku restarts the running daemon
         const val REFRESH_MS = 300L
     }
 }

@@ -7,8 +7,9 @@ interface IBridgeService {
 
     // Starts the bridge if it isn't running. tiltAxis: 0 = X, 1 = Y, 2 = Z (used without a
     // calibration). tiltCalibration: TiltCalibration.encode() or empty. buttonLayout:
-    // ButtonLayout.encode() or empty for the defaults. Returns status().
-    String start(int tiltAxis, boolean tiltInvert, String tiltCalibration, String buttonLayout) = 1;
+    // ButtonLayout.encode() or empty for the defaults. hideGuitar: take exclusive access (EVIOCGRAB)
+    // to the guitar's own input device so games only see the virtual gamepad. Returns status().
+    String start(int tiltAxis, boolean tiltInvert, String tiltCalibration, String buttonLayout, boolean hideGuitar) = 1;
 
     // Human-readable status: sources, virtual device, live values, errors.
     String status() = 2;

@@ -6,6 +6,7 @@
 package io.wiitar.app
 
 import android.content.Context
+import android.os.ParcelFileDescriptor
 import io.wiitar.bridge.BridgeMapping
 import io.wiitar.bridge.ButtonLayout
 import io.wiitar.bridge.EvdevEvent
@@ -18,7 +19,6 @@ import io.wiitar.bridge.VirtualGamepad
 import io.wiitar.protocol.Axis
 import io.wiitar.protocol.TiltConfig
 import java.io.File
-import java.io.FileInputStream
 import java.io.RandomAccessFile
 import kotlin.system.exitProcess
 
@@ -31,8 +31,13 @@ import kotlin.system.exitProcess
  * closes /dev/uhid, and the kernel then removes the virtual gamepad.
  */
 class BridgeService() : IBridgeService.Stub() {
-    @Suppress("UNUSED_PARAMETER")
-    constructor(context: Context) : this()
+    /** Shizuku prefers this constructor; the context tells us where the native library was extracted. */
+    constructor(context: Context) : this() {
+        nativeLibraryDir = context.applicationInfo?.nativeLibraryDir
+    }
+
+    private var nativeLibraryDir: String? = null
+    private var hideGuitar = false
 
     private val lock = Any()
     private var bridge: GuitarBridge? = null
@@ -56,9 +61,16 @@ class BridgeService() : IBridgeService.Stub() {
 
     private var mapping = BridgeMapping()
 
-    override fun start(tiltAxis: Int, tiltInvert: Boolean, tiltCalibration: String?, buttonLayout: String?): String {
+    override fun start(
+        tiltAxis: Int,
+        tiltInvert: Boolean,
+        tiltCalibration: String?,
+        buttonLayout: String?,
+        hideGuitar: Boolean,
+    ): String {
         synchronized(lock) {
             if (bridge != null) return status()
+            this.hideGuitar = hideGuitar
             mapping = ButtonLayout.decode(
                 buttonLayout,
                 BridgeMapping(
@@ -106,16 +118,21 @@ class BridgeService() : IBridgeService.Stub() {
         bridge = newBridge
         drainUhid(device)
 
-        read(guitar.first, guitar.second, node(guitar.first)!!)
+        read(guitar.first, guitar.second, node(guitar.first)!!, grab = hideGuitar)
         if (accel != null) read(accel, GuitarSource.ACCELEROMETER, node(accel)!!) else problem("No readable accelerometer device; tilt disabled.")
     }
 
     /** One blocking reader thread per evdev device. */
-    private fun read(device: KernelInputDevice, source: GuitarSource, path: String) {
-        sources += "$source: \"${device.name}\" %04x:%04x $path".format(device.vendor, device.product)
+    private fun read(device: KernelInputDevice, source: GuitarSource, path: String, grab: Boolean = false) {
         val size = if (System.getProperty("os.arch").orEmpty().contains("64")) EvdevEvent.SIZE_64 else EvdevEvent.SIZE_32
+        val fd = ParcelFileDescriptor.open(File(path), ParcelFileDescriptor.MODE_READ_ONLY)
+        val hidden = grab && grab(fd, path)
+        sources += "$source: \"${device.name}\" %04x:%04x $path%s".format(
+            device.vendor, device.product, if (hidden) " [hidden from games]" else "",
+        )
         thread("wiitar-$source") {
-            FileInputStream(path).use { input ->
+            // Closing the stream closes the fd, which also releases the grab.
+            ParcelFileDescriptor.AutoCloseInputStream(fd).use { input ->
                 val buffer = ByteArray(size * 64)
                 while (true) {
                     val n = input.read(buffer)
@@ -131,6 +148,17 @@ class BridgeService() : IBridgeService.Stub() {
                 }
             }
         }
+    }
+
+    /** EVIOCGRAB so Android and games stop receiving this device's events. */
+    private fun grab(fd: ParcelFileDescriptor, path: String): Boolean {
+        Evdev.load(nativeLibraryDir)?.let {
+            problem("Can't hide $path from games (native library: $it)")
+            return false
+        }
+        val result = Evdev.grab(fd.fd, true)
+        if (result != 0) problem("Can't hide $path from games (EVIOCGRAB errno ${-result})")
+        return result == 0
     }
 
     private fun handle(source: GuitarSource, event: EvdevEvent) {
