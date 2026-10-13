@@ -11,6 +11,7 @@ import android.content.ClipboardManager
 import android.graphics.Typeface
 import android.util.Log
 import android.util.TypedValue
+import android.view.InputDevice
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.Button
@@ -68,6 +69,16 @@ fun LinearLayout.button(text: String, onClick: () -> Unit): Button = Button(cont
     setOnClickListener { onClick() }
     this@button.addView(this, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
 }
+
+/**
+ * Devices the test screens listen to: anything external, plus gamepads and
+ * joysticks (the bridge's virtual "Wiitar Guitar" may be classed as built-in).
+ * Their keys are consumed so e.g. BUTTON_B doesn't fall back to BACK.
+ */
+val InputDevice.isController: Boolean
+    get() = isExternal ||
+        (sources and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
+        (sources and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
 
 fun Activity.copyToClipboard(label: String, text: String) {
     getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText(label, text))

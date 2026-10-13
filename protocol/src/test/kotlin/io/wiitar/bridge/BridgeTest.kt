@@ -120,10 +120,10 @@ class BridgeTest {
         val bridge = GuitarBridge()
         val expected = mapOf(
             Codes.BTN_EAST to VirtualGamepad.Button.A,
-            Codes.BTN_C to VirtualGamepad.Button.B,
+            Codes.BTN_C to VirtualGamepad.Button.X,
             Codes.BTN_NORTH to VirtualGamepad.Button.Y,
-            Codes.BTN_WEST to VirtualGamepad.Button.X,
-            Codes.BTN_Z to VirtualGamepad.Button.L1,
+            Codes.BTN_WEST to VirtualGamepad.Button.L1,
+            Codes.BTN_Z to VirtualGamepad.Button.R1,
         )
         for ((code, button) in expected) {
             val down = assertNotNull(bridge.feed(GuitarSource.ODIN_GUITAR, EvdevEvent.EV_KEY, code, 1))
@@ -169,7 +169,7 @@ class BridgeTest {
         val r = assertNotNull(bridge.feed(GuitarSource.ACCELEROMETER, EvdevEvent.EV_ABS, Codes.ABS_RY, 104))
         assertEquals(1f, bridge.state.tilt!!.amount)
         val buttons = ByteBuffer.wrap(r).order(ByteOrder.LITTLE_ENDIAN).getShort(0).toInt()
-        assertEquals(1 shl (VirtualGamepad.Button.R1.hidIndex - 1), buttons)
+        assertEquals(1 shl (VirtualGamepad.Button.THUMB_R.hidIndex - 1), buttons)
     }
 
     private fun GuitarBridge.accel(x: Int, y: Int, z: Int): ByteArray? {
@@ -208,7 +208,7 @@ class BridgeTest {
     fun `star power button has hysteresis`() {
         val calibration = TiltCalibration(rest = Vec3(100f, 0f, 0f), up = Vec3(0f, 0f, -100f))
         val bridge = GuitarBridge(BridgeMapping(tiltCalibration = calibration, tiltSmoothing = 1f))
-        val r1 = VirtualGamepad.Button.R1.hidIndex - 1
+        val r1 = VirtualGamepad.Button.THUMB_R.hidIndex - 1
         fun pressed(r: ByteArray?) = r?.let { ByteBuffer.wrap(it).order(ByteOrder.LITTLE_ENDIAN).getShort(0).toInt() shr r1 and 1 == 1 }
         bridge.accel(100, 0, 0)
         assertTrue(pressed(bridge.accel(20, 0, -98)) == true) // ~0.9: pressed
@@ -224,5 +224,21 @@ class BridgeTest {
         bridge.accel(0, 0, 100)
         bridge.accel(0, 0, 0)
         assertEquals(50f, bridge.gravity!!.z, 0.01f)
+    }
+
+    @Test
+    fun `no fret uses B, which Android turns into Back`() {
+        assertTrue(VirtualGamepad.Button.B !in BridgeMapping().frets.values)
+        assertEquals(5, BridgeMapping().frets.values.toSet().size)
+    }
+
+    @Test
+    fun `plus and minus are swapped on the Odin copy only`() {
+        val odin = GuitarBridge()
+        odin.feed(GuitarSource.ODIN_GUITAR, EvdevEvent.EV_KEY, Codes.BTN_SELECT, 1)
+        assertTrue(odin.state.plus && !odin.state.minus)
+        val kernel = GuitarBridge()
+        kernel.feed(GuitarSource.KERNEL_GUITAR, EvdevEvent.EV_KEY, Codes.BTN_START, 1)
+        assertTrue(kernel.state.plus && !kernel.state.minus)
     }
 }

@@ -41,14 +41,20 @@ data class GuitarInput(
     val tilt: Tilt? = null,
 )
 
-/** Where each guitar input goes on the virtual gamepad. Defaults follow common Clone Hero/YARG gamepad bindings. */
+/**
+ * Where each guitar input goes on the virtual gamepad.
+ *
+ * No fret uses B: Android turns an unhandled BUTTON_B into BACK (Generic.kcm
+ * fallback), which made the red fret leave Clone Hero's binding screen on the
+ * Odin 3.
+ */
 data class BridgeMapping(
     val frets: Map<Fret, VirtualGamepad.Button> = mapOf(
         Fret.GREEN to VirtualGamepad.Button.A,
-        Fret.RED to VirtualGamepad.Button.B,
+        Fret.RED to VirtualGamepad.Button.X,
         Fret.YELLOW to VirtualGamepad.Button.Y,
-        Fret.BLUE to VirtualGamepad.Button.X,
-        Fret.ORANGE to VirtualGamepad.Button.L1,
+        Fret.BLUE to VirtualGamepad.Button.L1,
+        Fret.ORANGE to VirtualGamepad.Button.R1,
     ),
     val plus: VirtualGamepad.Button = VirtualGamepad.Button.START,
     val minus: VirtualGamepad.Button = VirtualGamepad.Button.SELECT,
@@ -56,7 +62,7 @@ data class BridgeMapping(
     val tiltAxis: VirtualGamepad.Axis = VirtualGamepad.Axis.RZ,
     val touchStripAxis: VirtualGamepad.Axis = VirtualGamepad.Axis.RX,
     /** Button pressed while tilt exceeds [tiltButtonThreshold] (for games that want star power on a button). */
-    val tiltButton: VirtualGamepad.Button? = VirtualGamepad.Button.R1,
+    val tiltButton: VirtualGamepad.Button? = VirtualGamepad.Button.THUMB_R,
     val tiltButtonThreshold: Float = 0.6f,
     /** The tilt button releases below this, so sensor noise near the threshold doesn't make it flicker. */
     val tiltButtonRelease: Float = 0.4f,
@@ -146,8 +152,9 @@ class GuitarBridge(private val mapping: BridgeMapping = BridgeMapping()) {
         }
         state = when {
             fret != null -> state.copy(frets = if (down) state.frets + fret else state.frets - fret)
-            code == Codes.BTN_START -> state.copy(plus = down)
-            code == Codes.BTN_SELECT -> state.copy(minus = down)
+            // The Odin's copy swaps them: plus arrives as SELECT, minus as START (guided test).
+            code == Codes.BTN_START -> if (source == GuitarSource.ODIN_GUITAR) state.copy(minus = down) else state.copy(plus = down)
+            code == Codes.BTN_SELECT -> if (source == GuitarSource.ODIN_GUITAR) state.copy(plus = down) else state.copy(minus = down)
             code == Codes.BTN_DPAD_UP -> state.copy(strumUp = down)
             code == Codes.BTN_DPAD_DOWN -> state.copy(strumDown = down)
             else -> return

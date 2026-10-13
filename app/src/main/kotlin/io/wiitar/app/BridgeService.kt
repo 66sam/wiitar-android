@@ -93,7 +93,10 @@ class BridgeService() : IBridgeService.Stub() {
 
         val newBridge = GuitarBridge(mapping)
         val device = RandomAccessFile("/dev/uhid", "rw")
-        device.write(Uhid.create2(VIRTUAL_NAME, VirtualGamepad.DESCRIPTOR, VirtualGamepad.VENDOR, VirtualGamepad.PRODUCT))
+        // BUS_USB so Android classes it as an external controller (BUS_VIRTUAL reads as built-in).
+        device.write(
+            Uhid.create2(VIRTUAL_NAME, VirtualGamepad.DESCRIPTOR, VirtualGamepad.VENDOR, VirtualGamepad.PRODUCT, bus = Uhid.BUS_USB),
+        )
         device.write(Uhid.input2(newBridge.report()))
         uhid = device
         bridge = newBridge

@@ -167,7 +167,8 @@ guitars without a strip are unaffected.
 
 | Guitar | Device / Android | Path | Result |
 |---|---|---|---|
-| Guitar Hero guitar (World Tour-style, with touch strip) | AYN Odin 3 Max, Android 15, kernel 6.6 (GKI) | non-root, kernel `hid-wiimote` | Frets, strum, plus, touch strip and stick work. **Whammy and tilt don't reach Android.** See the mapping below. |
+| Guitar Hero guitar (World Tour-style, with touch strip) | AYN Odin 3 Max, Android 15, kernel 6.6 (GKI) | kernel `hid-wiimote` alone | Frets, strum and plus/minus reach Android, but Clone Hero can't bind the frets. No whammy or tilt. |
+| same | same | Guitar bridge (Shizuku) | Clone Hero binds the frets on "Wiitar Guitar" (red after the B→X change, to confirm). Tilt works after calibration. No whammy (hidden by `com.odin.mapping`). |
 
 ### Odin 3 Max mapping (non-root path)
 
@@ -186,6 +187,30 @@ built-in "Xbox" pad, so the Odin's controller layer probably re-presents it.
 | Stick | `AXIS_X`, `AXIS_Y` |
 | Whammy | nothing |
 | Tilt | nothing (no accelerometer device is exposed) |
+
+### Guitar bridge (no root, via Shizuku)
+
+The **Guitar bridge** screen starts a background service through
+[Shizuku](https://github.com/RikkaApps/Shizuku), which gives the app ADB-shell
+rights without root. The service reads the guitar's input devices and the
+Wii Remote's accelerometer from `/dev/input`, then creates a standard virtual
+gamepad named **"Wiitar Guitar"** through `/dev/uhid`:
+
+| Guitar | "Wiitar Guitar" |
+|---|---|
+| Green / Red / Yellow / Blue / Orange | A / X / Y / LB / RB |
+| Strum up / down | D-pad up / down |
+| Plus / Minus | Start / Select |
+| Tilt (calibrated from two poses) | right stick Y (`AXIS_RZ`), and right-stick click past ~60% |
+| Whammy | right stick X (`AXIS_Z`), only where the kernel guitar device is readable |
+| Touch strip | `AXIS_RX` |
+
+No fret uses B, because Android turns an unhandled `BUTTON_B` into Back.
+
+On the Odin 3, the system app `com.odin.mapping` hides the kernel guitar
+device (the one with whammy) and republishes it without whammy. So on that
+device the bridge has frets, strum, tilt and touch strip, but no whammy. In
+Clone Hero, "Wiitar Guitar" may appear as player 2.
 
 ## Adding support for a new guitar / extension ID
 

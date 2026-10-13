@@ -97,8 +97,9 @@ class BridgeActivity : Activity() {
                 "\"Wiitar Guitar\". Bind that controller in Clone Hero / YARG, not \"Nintendo Wii Remote Guitar\".\n\n" +
                 "Needs Shizuku running (see the probe screen). The bridge keeps running in the background until you stop it, " +
                 "the Wii Remote disconnects, or the device reboots.\n\n" +
-                "Default layout: Green A · Red B · Yellow Y · Blue X · Orange LB · strum D-pad up/down · " +
-                "plus Start · minus Select · whammy right stick X (Z) · tilt right stick Y (RZ), and RB when tilted past about 60%.",
+                "Layout: Green A · Red X · Yellow Y · Blue LB · Orange RB · strum D-pad up/down · plus Start · minus Select · " +
+                "tilt right stick Y (RZ), and right-stick click when tilted past about 60% · whammy right stick X (Z), " +
+                "when the guitar exposes it. If Clone Hero lists it as player 2, bind it there.",
         )
         column.heading("Tilt calibration")
         column.paragraph(
@@ -259,7 +260,7 @@ class BridgeActivity : Activity() {
 
     private companion object {
         const val REQUEST_SHIZUKU = 43
-        const val SERVICE_VERSION = 2 // bump when IBridgeService changes so Shizuku restarts the daemon
+        const val SERVICE_VERSION = 3 // bump whenever BridgeService changes so Shizuku restarts the running daemon
         const val REFRESH_MS = 300L
     }
 }

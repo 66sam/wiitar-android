@@ -97,8 +97,8 @@ class GuidedTestActivity : Activity() {
         appendLine("Wiitar guided test")
         appendLine("${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}), kernel ${System.getProperty("os.version")}")
         appendLine(WiitarApp.pairedWiimotesSummary(this@GuidedTestActivity))
-        appendLine("External input devices:")
-        InputDevice.getDeviceIds().toList().mapNotNull { InputDevice.getDevice(it) }.filter { it.isExternal }.forEach {
+        appendLine("Controllers:")
+        InputDevice.getDeviceIds().toList().mapNotNull { InputDevice.getDevice(it) }.filter { it.isController }.forEach {
             appendLine("  #${it.id} \"${it.name}\" %04x:%04x".format(it.vendorId, it.productId))
         }
         appendLine()
@@ -107,7 +107,7 @@ class GuidedTestActivity : Activity() {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val device = event.device
-        if (device == null || !device.isExternal) return super.dispatchKeyEvent(event)
+        if (device == null || !device.isController) return super.dispatchKeyEvent(event)
         capture.onKey(event)
         seenView.text = capture.summary().ifEmpty { "(nothing yet)" }
         return true
@@ -115,7 +115,7 @@ class GuidedTestActivity : Activity() {
 
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
         val device = event.device
-        if (device == null || !device.isExternal) return super.dispatchGenericMotionEvent(event)
+        if (device == null || !device.isController) return super.dispatchGenericMotionEvent(event)
         capture.onMotion(event)
         seenView.text = capture.summary().ifEmpty { "(nothing yet)" }
         return true

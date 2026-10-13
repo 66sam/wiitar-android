@@ -83,13 +83,13 @@ class InputDiagnosticsActivity : Activity(), InputManager.InputDeviceListener {
     override fun onInputDeviceChanged(deviceId: Int) {
         // Built-in devices (e.g. the touchscreen) report changes constantly; only external ones are interesting.
         val device = InputDevice.getDevice(deviceId)
-        if (device == null || device.isExternal) log("device changed: ${device?.let { summary(it) } ?: deviceId}")
+        if (device == null || device.isController) log("device changed: ${device?.let { summary(it) } ?: deviceId}")
         refreshDevices()
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val device = event.device
-        if (device == null || !device.isExternal) return super.dispatchKeyEvent(event)
+        if (device == null || !device.isController) return super.dispatchKeyEvent(event)
         if (event.repeatCount == 0) {
             val down = event.action == KeyEvent.ACTION_DOWN
             val key = KeyEvent.keyCodeToString(event.keyCode)
@@ -103,7 +103,7 @@ class InputDiagnosticsActivity : Activity(), InputManager.InputDeviceListener {
 
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
         val device = event.device ?: return super.dispatchGenericMotionEvent(event)
-        if (!device.isExternal) return super.dispatchGenericMotionEvent(event)
+        if (!device.isController) return super.dispatchGenericMotionEvent(event)
         val axes = device.motionRanges.map { it.axis }.distinct()
         liveAxes[device.id] = axes.joinToString(" ") {
             "${MotionEvent.axisToString(it).removePrefix("AXIS_")}=%+.2f".format(event.getAxisValue(it))
@@ -141,7 +141,7 @@ class InputDiagnosticsActivity : Activity(), InputManager.InputDeviceListener {
     private fun deviceListing(): String = buildString {
         val devices = inputManager.inputDeviceIds.toList().mapNotNull { InputDevice.getDevice(it) }
         // External devices (the Wiimote's) first; built-in ones after.
-        for (d in devices.sortedByDescending { it.isExternal }) {
+        for (d in devices.sortedByDescending { it.isController }) {
             appendLine(summary(d))
             appendLine("  sources: ${sourceNames(d.sources)}  keyboardType=${d.keyboardType}  controller#=${d.controllerNumber}")
             appendLine("  descriptor: ${d.descriptor}")
