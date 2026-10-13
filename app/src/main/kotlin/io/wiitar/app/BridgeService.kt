@@ -213,6 +213,7 @@ class BridgeService() : IBridgeService.Stub() {
                     s.whammy?.let { "%.2f".format(it) } ?: "n/a",
                     s.touchStrip?.let { "%+.2f".format(it) } ?: "-",
                 ))
+                appendLine("Output: ${b.pressedButtons().joinToString().ifEmpty { "no buttons" }}")
                 val calibrated = mapping.tiltCalibration?.takeIf { it.usable } != null
                 appendLine("Tilt: %s %s  (accel raw X %d, Y %d, Z %d)".format(
                     s.tilt?.let { "%.0f° → %.2f".format(it.degrees, it.amount) } ?: "n/a",

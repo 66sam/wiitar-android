@@ -120,15 +120,19 @@ class GuitarBridge(private val mapping: BridgeMapping = BridgeMapping()) {
     }
 
     /** The report for the current state, e.g. to send right after creating the device. */
+    /** Virtual-gamepad buttons held in the current state. */
+    fun pressedButtons(): Set<VirtualGamepad.Button> = buildSet {
+        val s = state
+        s.frets.forEach { mapping.frets[it]?.let(::add) }
+        if (s.plus) add(mapping.plus)
+        if (s.minus) add(mapping.minus)
+        val tiltButton = mapping.tiltButton
+        if (tiltButton != null && tiltButtonDown) add(tiltButton)
+    }
+
     fun report(): ByteArray {
         val s = state
-        val buttons = buildSet {
-            s.frets.forEach { mapping.frets[it]?.let(::add) }
-            if (s.plus) add(mapping.plus)
-            if (s.minus) add(mapping.minus)
-            val tiltButton = mapping.tiltButton
-            if (tiltButton != null && tiltButtonDown) add(tiltButton)
-        }
+        val buttons = pressedButtons()
         val hat = when {
             s.strumUp && !s.strumDown -> VirtualGamepad.Hat.UP
             s.strumDown && !s.strumUp -> VirtualGamepad.Hat.DOWN

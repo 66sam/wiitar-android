@@ -89,7 +89,11 @@ class InputDiagnosticsActivity : Activity(), InputManager.InputDeviceListener {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val device = event.device
-        if (device == null || !device.isController) return super.dispatchKeyEvent(event)
+        if (device == null || !device.isController) {
+            // Not consumed (so system keys keep working), but logged: shows e.g. a Back injected by a system service.
+            if (event.repeatCount == 0) log("other key: ${describeKey(event)}")
+            return super.dispatchKeyEvent(event)
+        }
         if (event.repeatCount == 0) {
             val down = event.action == KeyEvent.ACTION_DOWN
             val key = KeyEvent.keyCodeToString(event.keyCode)

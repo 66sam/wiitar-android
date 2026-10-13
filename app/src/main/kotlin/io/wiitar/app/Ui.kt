@@ -12,6 +12,7 @@ import android.graphics.Typeface
 import android.util.Log
 import android.util.TypedValue
 import android.view.InputDevice
+import android.view.KeyEvent
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.Button
@@ -79,6 +80,22 @@ val InputDevice.isController: Boolean
     get() = isExternal ||
         (sources and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
         (sources and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
+
+/** One-line description of a key event for logs, including where it came from. */
+fun describeKey(event: KeyEvent): String {
+    val device = event.device
+    val origin = when {
+        device == null -> "device ${event.deviceId}"
+        else -> "\"${device.name}\"#${device.id}${if (device.isVirtual) " (virtual/system)" else ""}"
+    }
+    val flags = buildList {
+        if ((event.flags and KeyEvent.FLAG_FALLBACK) != 0) add("fallback")
+        if ((event.flags and KeyEvent.FLAG_VIRTUAL_HARD_KEY) != 0) add("virtual-hard-key")
+    }
+    val action = if (event.action == KeyEvent.ACTION_DOWN) "DOWN" else "UP  "
+    return "$origin $action ${KeyEvent.keyCodeToString(event.keyCode)} scan=${event.scanCode}" +
+        if (flags.isEmpty()) "" else " [${flags.joinToString()}]"
+}
 
 fun Activity.copyToClipboard(label: String, text: String) {
     getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText(label, text))

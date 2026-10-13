@@ -120,7 +120,10 @@ class GuidedTestActivity : Activity() {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val device = event.device
-        if (device == null || !device.isController) return super.dispatchKeyEvent(event)
+        if (device == null || !device.isController) {
+            if (event.repeatCount == 0) DiagnosticLog.add("[test] other key: ${describeKey(event)}")
+            return super.dispatchKeyEvent(event)
+        }
         capture.onKey(event)
         renderSeen()
         return true
