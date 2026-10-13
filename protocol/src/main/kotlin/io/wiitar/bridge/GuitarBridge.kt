@@ -152,9 +152,8 @@ class GuitarBridge(private val mapping: BridgeMapping = BridgeMapping()) {
         }
         state = when {
             fret != null -> state.copy(frets = if (down) state.frets + fret else state.frets - fret)
-            // The Odin's copy swaps them: plus arrives as SELECT, minus as START (guided test).
-            code == Codes.BTN_START -> if (source == GuitarSource.ODIN_GUITAR) state.copy(minus = down) else state.copy(plus = down)
-            code == Codes.BTN_SELECT -> if (source == GuitarSource.ODIN_GUITAR) state.copy(plus = down) else state.copy(minus = down)
+            code == Codes.BTN_START -> state.copy(plus = down)
+            code == Codes.BTN_SELECT -> state.copy(minus = down)
             code == Codes.BTN_DPAD_UP -> state.copy(strumUp = down)
             code == Codes.BTN_DPAD_DOWN -> state.copy(strumDown = down)
             else -> return

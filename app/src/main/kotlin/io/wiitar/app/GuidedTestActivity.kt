@@ -22,15 +22,15 @@ class GuidedTestActivity : Activity() {
     private class Step(val label: String, val instruction: String)
 
     private val steps = listOf(
-        Step("Green fret", "Press and release the GREEN fret a couple of times."),
-        Step("Red fret", "Press and release the RED fret."),
-        Step("Yellow fret", "Press and release the YELLOW fret."),
-        Step("Blue fret", "Press and release the BLUE fret."),
-        Step("Orange fret", "Press and release the ORANGE fret."),
-        Step("Strum up", "Strum UP a few times (flick the strum bar towards your face)."),
-        Step("Strum down", "Strum DOWN a few times."),
-        Step("Plus", "Press the + (plus / star power) button."),
-        Step("Minus", "Press the − (minus) button."),
+        Step("Green fret", "Press and release ONLY the GREEN fret, a couple of times."),
+        Step("Red fret", "Press and release ONLY the RED fret."),
+        Step("Yellow fret", "Press and release ONLY the YELLOW fret."),
+        Step("Blue fret", "Press and release ONLY the BLUE fret."),
+        Step("Orange fret", "Press and release ONLY the ORANGE fret."),
+        Step("Strum up", "Strum UP a few times (flick the strum bar towards your face). Nothing else."),
+        Step("Strum down", "Strum DOWN a few times. Nothing else."),
+        Step("Plus (+)", "Press ONLY the button marked + (usually Start/pause). Don't press the Star Power button."),
+        Step("Minus (−) / Star Power", "Press ONLY the button marked − (on many guitars this is the Star Power button)."),
         Step("Whammy", "Push the whammy bar all the way, then let it return slowly."),
         Step("Tilt", "Hold the guitar normally, raise the neck straight up, then lower it again."),
         Step("Touch strip", "Slide a finger along the touch strip above the frets. Skip if your guitar has none."),
@@ -38,6 +38,9 @@ class GuidedTestActivity : Activity() {
         Step("Wii Remote", "Press A, B, 1, 2, Home and the D-pad on the Wii Remote itself."),
     )
     private val results = arrayOfNulls<String>(steps.size)
+
+    /** The first steps (frets, strum, plus, minus) each expect exactly one control. */
+    private val BUTTON_STEPS = 9
     private var index = 0
     private var capture = InputCapture()
 
@@ -60,6 +63,16 @@ class GuidedTestActivity : Activity() {
         column.button("Copy results") { copyToClipboard("wiitar guided test", report()) }
         summaryView = column.monospace()
         startStep()
+    }
+
+    private fun renderSeen() {
+        val seen = capture.summary()
+        seenView.text = when {
+            seen.isEmpty() -> "(nothing yet)"
+            index < BUTTON_STEPS && capture.distinctKeys > 1 ->
+                "$seen\n\n⚠ More than one button was seen. If you pressed something else too, tap Redo."
+            else -> seen
+        }
     }
 
     private fun startStep() {
@@ -109,7 +122,7 @@ class GuidedTestActivity : Activity() {
         val device = event.device
         if (device == null || !device.isController) return super.dispatchKeyEvent(event)
         capture.onKey(event)
-        seenView.text = capture.summary().ifEmpty { "(nothing yet)" }
+        renderSeen()
         return true
     }
 
@@ -117,7 +130,7 @@ class GuidedTestActivity : Activity() {
         val device = event.device
         if (device == null || !device.isController) return super.dispatchGenericMotionEvent(event)
         capture.onMotion(event)
-        seenView.text = capture.summary().ifEmpty { "(nothing yet)" }
+        renderSeen()
         return true
     }
 }
@@ -128,12 +141,24 @@ class GuidedTestActivity : Activity() {
  */
 class InputCapture {
     private val keys = LinkedHashMap<String, Int>()
+
+    /** Key codes seen per device id. */
+    private val keysPerDevice = HashMap<Int, MutableSet<Int>>()
+
+    /**
+     * The most distinct keys any single device reported. One press shows up on
+     * both the guitar's device and the bridge's "Wiitar Guitar", so counting per
+     * device tells "pressed two buttons" apart from "one button, two devices".
+     */
+    val distinctKeys: Int get() = keysPerDevice.values.maxOfOrNull { it.size } ?: 0
+
     private val axes = LinkedHashMap<String, FloatArray>() // [first, min, max]
 
     fun onKey(event: KeyEvent) {
         if (event.action != KeyEvent.ACTION_DOWN || event.repeatCount != 0) return
         val name = "${deviceName(event.device)} ${KeyEvent.keyCodeToString(event.keyCode)} (scan ${event.scanCode})"
         keys[name] = (keys[name] ?: 0) + 1
+        keysPerDevice.getOrPut(event.deviceId) { mutableSetOf() } += event.keyCode
     }
 
     fun onMotion(event: MotionEvent) {

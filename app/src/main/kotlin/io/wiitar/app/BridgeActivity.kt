@@ -260,7 +260,7 @@ class BridgeActivity : Activity() {
 
     private companion object {
         const val REQUEST_SHIZUKU = 43
-        const val SERVICE_VERSION = 3 // bump whenever BridgeService changes so Shizuku restarts the running daemon
+        const val SERVICE_VERSION = 4 // bump whenever BridgeService changes so Shizuku restarts the running daemon
         const val REFRESH_MS = 300L
     }
 }

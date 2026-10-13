@@ -233,12 +233,13 @@ class BridgeTest {
     }
 
     @Test
-    fun `plus and minus are swapped on the Odin copy only`() {
-        val odin = GuitarBridge()
-        odin.feed(GuitarSource.ODIN_GUITAR, EvdevEvent.EV_KEY, Codes.BTN_SELECT, 1)
-        assertTrue(odin.state.plus && !odin.state.minus)
-        val kernel = GuitarBridge()
-        kernel.feed(GuitarSource.KERNEL_GUITAR, EvdevEvent.EV_KEY, Codes.BTN_START, 1)
-        assertTrue(kernel.state.plus && !kernel.state.minus)
+    fun `plus is start and minus is select on both guitar sources`() {
+        for (source in listOf(GuitarSource.ODIN_GUITAR, GuitarSource.KERNEL_GUITAR)) {
+            val bridge = GuitarBridge()
+            bridge.feed(source, EvdevEvent.EV_KEY, Codes.BTN_START, 1)
+            assertTrue(bridge.state.plus && !bridge.state.minus, "$source")
+            bridge.feed(source, EvdevEvent.EV_KEY, Codes.BTN_SELECT, 1)
+            assertTrue(bridge.state.minus, "$source")
+        }
     }
 }
