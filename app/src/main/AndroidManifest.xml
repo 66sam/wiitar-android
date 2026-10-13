@@ -38,6 +38,11 @@
             android:exported="false" />
 
         <activity
+            android:name=".GuidedTestActivity"
+            android:label="Guided guitar test"
+            android:exported="false" />
+
+        <activity
             android:name=".InputDiagnosticsActivity"
             android:label="Input diagnostics"
             android:exported="false" />

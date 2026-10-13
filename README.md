@@ -167,7 +167,7 @@ guitars without a strip are unaffected.
 
 | Guitar | Device / Android | Path | Result |
 |---|---|---|---|
-| *(none tested yet)* | | | |
+| Guitar Hero guitar (model TBC) | AYN Odin 3 Max, Android 15, kernel 6.6 (GKI) | non-root, kernel `hid-wiimote` | Pairs with the app's PIN (1+2 method). The kernel creates "Nintendo Wii Remote" and "Nintendo Wii Remote Guitar" input devices. Stick, strum, plus/minus and some frets confirmed; full per-control mapping, whammy and tilt are still being tested. The Odin reports the guitar as vendor 2020 / product 0111, so its controller layer may be re-presenting it. |
 
 ## Adding support for a new guitar / extension ID
 

@@ -18,10 +18,11 @@ class MainActivity : Activity() {
         column.paragraph(
             "Step 1: pair your Wii Remote (guitar plugged in) with the pairing helper. " +
                 "It answers the Wiimote's PIN request, which can't be typed by hand.\n\n" +
-                "Step 2: open Input diagnostics and press every fret, strum, whammy and tilt. " +
-                "Then tap \"Copy report\" and send the text back.",
+                "Step 2: run the guided guitar test. It asks for one control at a time and records what each produces. " +
+                "Then tap \"Copy results\" and send the text back. Input diagnostics shows everything live.",
         )
         column.button("Pair a Wii Remote") { startActivity(Intent(this, PairingActivity::class.java)) }
+        column.button("Guided guitar test") { startActivity(Intent(this, GuidedTestActivity::class.java)) }
         column.button("Input diagnostics") { startActivity(Intent(this, InputDiagnosticsActivity::class.java)) }
         column.monospace(
             "\nv${packageManager.getPackageInfo(packageName, 0).versionName} · " +
