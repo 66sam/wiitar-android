@@ -4,9 +4,10 @@ Use a Wii Remote + Guitar Hero guitar as a game controller on Android
 (Clone Hero, YARG), with no PC and no adapter dongle.
 
 > **Status: early.** The Wiimote protocol layer (`:protocol`) is written and
-> unit-tested. The Android app is waiting on a real-device test that decides
-> how it connects; see [Roadmap](#roadmap) and
-> [First on-device test](#first-on-device-test).
+> unit-tested. The app currently has a pairing helper and an input
+> diagnostics screen. The next step depends on what the
+> [current on-device test](#current-on-device-test) shows; see the
+> [Roadmap](#roadmap).
 
 ## How it works (and why it isn't the obvious design)
 
@@ -44,25 +45,54 @@ So the plan has two paths:
 
 Both paths still need hardware confirmation. That is the next step.
 
-## First on-device test
+## Installing
 
-Please run this on the target device (AYN Odin 3 Max) before more Android
-code is written. The result decides the app's architecture.
+Every push is built by GitHub Actions. Open the repository's **Actions** tab,
+pick the latest **Build** run, and download the `wiitar-debug-apk` artifact
+(a zip containing the APK). Sideload it, e.g. `adb install app-debug.apk`.
 
+To build it yourself: open the project in Android Studio, or run
+`./gradlew :app:assembleDebug` with `ANDROID_HOME` set.
+
+## Pairing
+
+Wii Remotes use legacy Bluetooth PIN pairing with a **6-byte binary PIN**,
+which can't be typed into Android's PIN dialog. The app's pairing helper
+answers the request itself (`BluetoothDevice.setPin`):
+
+| How you make it discoverable | PIN | After pairing |
+|---|---|---|
+| Hold **1 + 2** | the Wii Remote's address, byte-reversed | press 1+2 again each session |
+| Press red **SYNC** | *this device's* address, byte-reversed | the Wii Remote remembers it and reconnects on any button press |
+
+Android doesn't let apps read the device's own Bluetooth address. For SYNC
+pairing, copy it from **Settings → About phone → Status → Bluetooth address**
+into the app once.
+
+Steps:
 1. Plug the guitar into the Wii Remote.
-2. Open **Settings → Bluetooth → Pair new device**.
-3. Press the red **SYNC** button (under the battery cover). The LEDs blink.
-4. If **Nintendo RVL-CNT-01** (or `-TR`) appears, tap it.
-   - If it asks for a PIN, cancel and note that it asked.
-   - Wiimotes stay discoverable for about 20 s; press SYNC again if it drops off.
-5. If it pairs, open Clone Hero → Settings → Controls → add a controller,
-   then press frets, strum, and the whammy bar.
-6. Optional, if `adb` is available:
-   `adb shell getevent -lp` (lists input devices; look for "Nintendo Wii Remote*")
-   and `adb shell getevent -l` while playing.
+2. Open Wiitar → **Pair a Wii Remote**, choose the method, and grant the
+   Bluetooth permission.
+3. Put the Wii Remote in pairing mode (the LEDs blink for about 20 s), then
+   tap **Scan**.
+4. Tap the ★ Nintendo RVL-CNT-01 entry. If Android also shows a PIN dialog,
+   leave it alone. The log should show `setPin(...) → true`, then
+   `bonding → bonded`.
+5. If it was already paired from an earlier attempt, first remove it in
+   Android's Bluetooth settings.
 
-Report: did it show up, did it pair, did it ask for a PIN, did Clone Hero see
-input, and what `getevent` printed.
+## Current on-device test
+
+After pairing, open **Input diagnostics**. Press every fret, strum both ways,
+press plus/minus, move the whammy and stick, tilt the guitar, and slide the
+touch strip if there is one. Then tap **Copy report** and paste the text into
+an issue or chat. It shows:
+- which input devices the kernel created (we hope for "Nintendo Wii Remote"
+  plus a guitar device, vendor 057e);
+- the key codes, scan codes and axes each control produces.
+
+That shows whether the non-root path is enough (Clone Hero / YARG will see
+exactly these events) or whether the root uinput backend is needed.
 
 ## Project layout
 
@@ -70,8 +100,9 @@ input, and what `getevent` printed.
 protocol/   Pure Kotlin, no Android dependencies. Wiimote report building/parsing,
             extension detection and setup, guitar decoding, accelerometer tilt,
             and a transport-agnostic session state machine. Fully unit tested.
-app/        (not yet) Android app: pairing helper, diagnostics, player slots,
-            root uinput backend.
+app/        Android app (minSdk 29): pairing helper and input diagnostics so far.
+            Plain platform widgets, no AndroidX. Only included in the build when an
+            Android SDK is configured.
 ```
 
 ### Protocol module overview
@@ -117,6 +148,8 @@ Notes on the original spec:
 
 Requires JDK 17+. The protocol module builds without the Android SDK.
 
+Pairing PIN logic is in `WiimotePairing` (`:protocol`) and is unit tested.
+
 ## Supported extension IDs
 
 | ID (0xA400FA-FF) | Device | Status |
@@ -153,9 +186,9 @@ guitars without a strip are unaffected.
 ## Roadmap
 
 1. ✅ Protocol layer + unit tests
-2. ⏳ On-device test of system pairing + kernel driver (above)
-3. App: pairing helper (`setPin` with the Wiimote's reversed address),
-   per-player LED/slot view, and a diagnostics screen
+2. ✅ Pairing helper (`setPin` with the reversed address) + input diagnostics
+3. ⏳ On-device test: does the kernel driver produce usable guitar input?
+   Then the per-player slot view and the protocol-level diagnostics screen
 4. Root backend: hidraw → `:protocol` → uinput virtual gamepad, plus a
    remapping UI with "press the input to bind" capture, and per-device
    settings
