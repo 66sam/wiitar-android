@@ -87,7 +87,11 @@ fun HomeScreen(state: BridgeUiState, onAdvanced: () -> Unit) {
                 StepRow(
                     done = state.running,
                     title = "Bridge",
-                    detail = if (state.running) "Running" else "Tap Start below.",
+                    detail = when {
+                        state.running -> "Running"
+                        BridgeClient.autoStart -> "Starts by itself once Shizuku is ready, or tap Start."
+                        else -> "Tap Start below."
+                    },
                 )
             }
         }
@@ -104,6 +108,13 @@ fun HomeScreen(state: BridgeUiState, onAdvanced: () -> Unit) {
                 Panel {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Heading("Player $slot", Modifier.weight(1f))
+                        val battery = live[LiveState.BATTERY]
+                        if (battery >= 0) {
+                            Text(
+                                "Battery $battery%  ",
+                                Type.dim.copy(color = if (battery <= 15) Palette.warn else Palette.textDim),
+                            )
+                        }
                         SecondaryButton("Buzz") { BridgeClient.service?.let { s -> BridgeClient.call { s.rumble(slot, 400) } } }
                     }
                     GuitarView(live)

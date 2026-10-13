@@ -12,6 +12,7 @@ import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.IBinder
 import io.wiitar.bridge.BridgeConfig
+import io.wiitar.bridge.Profiles
 import io.wiitar.bridge.TiltCalibration
 import rikka.shizuku.Shizuku
 import java.util.concurrent.CopyOnWriteArrayList
@@ -24,7 +25,7 @@ import java.util.concurrent.Executors
  */
 object BridgeClient {
     /** Bump whenever BridgeService or its AIDL changes, so Shizuku replaces a running old daemon. */
-    private const val SERVICE_VERSION = 8
+    private const val SERVICE_VERSION = 9
     private const val REQUEST_SHIZUKU = 44
     const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
 
@@ -62,7 +63,7 @@ object BridgeClient {
             call {
                 if (startWhenConnected) {
                     startWhenConnected = false
-                    s.start(config().encode())
+                    s.start(config().encode(), Profiles.encode(profiles()))
                 }
                 running = s.status().startsWith("Bridge running")
                 notifyChanged()
@@ -79,8 +80,11 @@ object BridgeClient {
     fun init(context: Context) {
         app = context.applicationContext
         Shizuku.addBinderReceivedListenerSticky {
-            // Reattach to a bridge left running earlier, without starting a new one.
-            if (shizukuState() == ShizukuStatus.READY) bind()
+            // Reattach to a bridge left running earlier; with auto-start, also start one.
+            if (shizukuState() == ShizukuStatus.READY) {
+                if (autoStart) startWhenConnected = true
+                bind()
+            }
             notifyChanged()
         }
         Shizuku.addBinderDeadListener { notifyChanged() }
@@ -123,7 +127,7 @@ object BridgeClient {
         val s = service
         if (s != null) {
             call {
-                s.start(config().encode())
+                s.start(config().encode(), Profiles.encode(profiles()))
                 running = true
                 notifyChanged()
             }
@@ -179,11 +183,52 @@ object BridgeClient {
         )
     }
 
-    /** Saves the change and applies it to a running bridge immediately. */
-    fun updateConfig(change: (BridgeConfig) -> BridgeConfig) {
-        val updated = change(config())
-        prefs.edit().putString("config", updated.encode()).apply()
-        service?.let { s -> call { s.configure(updated.encode()) } }
+    /** Per-guitar settings, keyed by guitar id (the Wii Remote's Bluetooth address). */
+    fun profiles(): Map<String, BridgeConfig> = Profiles.decode(prefs.getString("profiles", null))
+
+    /** The settings guitar [id] uses: its own profile, or the shared ones. */
+    fun configFor(id: String?): BridgeConfig = id?.let { profiles()[it] } ?: config()
+
+    fun hasProfile(id: String?): Boolean = id != null && id in profiles()
+
+    /**
+     * Saves a change and applies it to a running bridge immediately. With [id], the change
+     * goes to that guitar's own profile (created from the shared settings on first change).
+     */
+    fun updateConfig(id: String? = null, change: (BridgeConfig) -> BridgeConfig) {
+        if (id == null) {
+            prefs.edit().putString("config", change(config()).encode()).apply()
+        } else {
+            val profiles = profiles()
+            val updated = profiles + (id to change(profiles[id] ?: config()))
+            prefs.edit().putString("profiles", Profiles.encode(updated)).apply()
+        }
+        push()
+    }
+
+    /** Drops guitar [id]'s own settings so it uses the shared ones again. */
+    fun clearProfile(id: String) {
+        prefs.edit().putString("profiles", Profiles.encode(profiles() - id)).apply()
+        push()
+    }
+
+    private fun push() {
+        val config = config().encode()
+        val profiles = Profiles.encode(profiles())
+        service?.let { s -> call { s.configure(config, profiles) } }
         notifyChanged()
+    }
+
+    /** Start the bridge by itself whenever Shizuku is available (app start, Shizuku start, guitar connect). */
+    var autoStart: Boolean
+        get() = prefs.getBoolean("autoStart", true)
+        set(value) {
+            prefs.edit().putBoolean("autoStart", value).apply()
+            notifyChanged()
+        }
+
+    /** Called when a Wii Remote connects: starts the bridge if auto-start is on and it isn't running. */
+    fun onWiimoteConnected() {
+        if (autoStart && !running && shizukuState() == ShizukuStatus.READY) start()
     }
 }

@@ -226,3 +226,29 @@ fun ToggleRow(title: String, detail: String, checked: Boolean, onChange: (Boolea
         }
     }
 }
+
+/**
+ * Chooses whose settings a screen edits: the shared ones, or one connected
+ * guitar's own profile. [selected] is a guitar id, or null for shared.
+ */
+@Composable
+fun ProfilePicker(guitars: List<io.wiitar.app.GuitarInfo>, selected: String?, onSelect: (String?) -> Unit) {
+    if (guitars.isEmpty()) return
+    val options = listOf<String?>(null) + guitars.map { it.id }
+    Segmented(options, selected, { id ->
+        if (id == null) "All guitars" else "Player ${guitars.firstOrNull { it.id == id }?.slot ?: "?"}"
+    }, onSelect)
+    Text(
+        if (selected == null) "Shared settings, used by every guitar without its own."
+        else if (io.wiitar.app.BridgeClient.hasProfile(selected)) "This guitar has its own settings ($selected)."
+        else "Changes here give this guitar its own settings ($selected).",
+        Type.dim,
+    )
+    if (selected != null && io.wiitar.app.BridgeClient.hasProfile(selected)) {
+        SecondaryButton("Use shared settings for this guitar") {
+            io.wiitar.app.BridgeClient.clearProfile(selected)
+            onSelect(selected)
+        }
+    }
+}
+

@@ -136,6 +136,7 @@ class ProbeActivity : Activity() {
                 }
                 append("\n===== $title =====\n$ $command\n$result")
             }
+            append("\n===== hidden Bluetooth socket APIs (reflection, app process) =====\n" + bluetoothSocketApis())
             status("Probe done. Tap Copy output and send it back.")
         }
     }
@@ -151,6 +152,22 @@ class ProbeActivity : Activity() {
             }
             append("\n===== raw input (10 s) =====\n$result")
             status("Recording done. Tap Copy output and send it back.")
+        }
+    }
+
+    /** Lists BluetoothDevice/BluetoothSocket methods that could open classic L2CAP channels. */
+    private fun bluetoothSocketApis(): String = buildString {
+        for (cls in listOf(android.bluetooth.BluetoothDevice::class.java, android.bluetooth.BluetoothSocket::class.java)) {
+            val methods = cls.declaredMethods.filter { it.name.contains("L2cap", ignoreCase = true) }
+            appendLine("${cls.simpleName}: " + methods.joinToString { m ->
+                "${m.name}(${m.parameterTypes.joinToString { it.simpleName }})"
+            }.ifEmpty { "none" })
+            val ctors = if (cls == android.bluetooth.BluetoothSocket::class.java) {
+                cls.declaredConstructors.joinToString(" | ") { c -> c.parameterTypes.joinToString { it.simpleName } }
+            } else {
+                ""
+            }
+            if (ctors.isNotEmpty()) appendLine("BluetoothSocket constructors: $ctors")
         }
     }
 
@@ -201,6 +218,9 @@ class ProbeActivity : Activity() {
                 "grep -iE 'exclude|blacklist|whitelist|ignore|grab|wiimote|nintendo|057e|guitar|persist\\.|/dev/input|unlink|hidraw|uinput|settings' | " +
                 "sort -u | head -200",
             "Odin system properties" to "getprop | grep -iE 'odin|ayn|mapping|gamepad' | head -60",
+            // Research: could the bridge talk to the Wii Remote directly (raw L2CAP) instead of via the kernel?
+            "Shell Bluetooth permissions" to "dumpsys package com.android.shell | grep -iE 'android.permission.BLUETOOTH' | sort -u",
+            "Wii Remote batteries" to "for f in /sys/class/power_supply/wiimote_battery_*; do echo \"\$f \$(cat \$f/capacity 2>&1)\"; done",
             "Wii Remote LEDs" to "for f in /sys/class/leds/*057E*/brightness; do " +
                 "if [ -w \$f ]; then echo \"\$f writable\"; else echo \"\$f NOT writable\"; fi; done",
         )

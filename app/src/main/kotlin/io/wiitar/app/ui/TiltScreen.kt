@@ -32,11 +32,13 @@ import io.wiitar.protocol.Axis
 @Composable
 fun TiltScreen(state: BridgeUiState, onBack: () -> Unit) {
     var version by remember { mutableIntStateOf(0) }
-    val config = remember(version) { BridgeClient.config() }
+    var profileId by remember { mutableStateOf<String?>(null) }
+    val config = remember(version, profileId) { BridgeClient.configFor(profileId) }
     var rest by remember { mutableStateOf<Vec3?>(null) }
     var note by remember { mutableStateOf("") }
-    val live = state.live.firstOrNull()
-    val slot = live?.get(LiveState.SLOT) ?: 1
+    // Calibrate with the selected guitar, or the first one for the shared settings.
+    val slot = state.guitars.firstOrNull { it.id == profileId }?.slot ?: state.live.firstOrNull()?.get(LiveState.SLOT) ?: 1
+    val live = state.live.firstOrNull { it[LiveState.SLOT] == slot }
 
     /** Reads guitar [slot]'s current gravity direction from the bridge, then calls [then] with it. */
     fun withGravity(then: (Vec3) -> Unit) {
@@ -52,6 +54,17 @@ fun TiltScreen(state: BridgeUiState, onBack: () -> Unit) {
     }
 
     ScreenFrame("Tilt", onBack) {
+        if (state.guitars.isNotEmpty()) {
+            Panel {
+                Heading("Settings for")
+                ProfilePicker(state.guitars, profileId) {
+                    profileId = it
+                    rest = null
+                    note = ""
+                    version++
+                }
+            }
+        }
         Panel {
             Heading("Live")
             val tilt = live?.get(LiveState.TILT) ?: -1
@@ -89,7 +102,7 @@ fun TiltScreen(state: BridgeUiState, onBack: () -> Unit) {
                             if (!calibration.usable) {
                                 note = "Those two positions were too similar. Raise the neck further and try step 2 again."
                             } else {
-                                BridgeClient.updateConfig { it.copy(tiltCalibration = calibration) }
+                                BridgeClient.updateConfig(profileId) { it.copy(tiltCalibration = calibration) }
                                 rest = null
                                 note = "Calibrated."
                                 version++
@@ -104,7 +117,7 @@ fun TiltScreen(state: BridgeUiState, onBack: () -> Unit) {
             )
             if (config.tiltCalibration != null) {
                 SecondaryButton("Clear calibration") {
-                    BridgeClient.updateConfig { it.copy(tiltCalibration = null) }
+                    BridgeClient.updateConfig(profileId) { it.copy(tiltCalibration = null) }
                     version++
                 }
             }
@@ -115,11 +128,11 @@ fun TiltScreen(state: BridgeUiState, onBack: () -> Unit) {
                 Heading("Without calibration")
                 Text("Accelerometer axis used for tilt:", Type.dim)
                 Segmented(Axis.entries, config.tiltAxis, { it.name }) { axis ->
-                    BridgeClient.updateConfig { it.copy(tiltAxis = axis) }
+                    BridgeClient.updateConfig(profileId) { it.copy(tiltAxis = axis) }
                     version++
                 }
                 ToggleRow("Invert", "Use if tilt goes the wrong way.", config.tiltInvert) { on ->
-                    BridgeClient.updateConfig { it.copy(tiltInvert = on) }
+                    BridgeClient.updateConfig(profileId) { it.copy(tiltInvert = on) }
                     version++
                 }
             }

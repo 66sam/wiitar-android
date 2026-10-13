@@ -62,3 +62,16 @@ class LatencyStatsTest {
         assertEquals(5000L, stats.summary()[3])
     }
 }
+
+class ProfilesTest {
+    @Test
+    fun `profiles round trip`() {
+        val profiles = mapOf(
+            "00:21:BD:1F:1B:57" to BridgeConfig(touchStripMode = TouchStripMode.WHAMMY),
+            "00:1F:32:AA:BB:CC" to BridgeConfig(buttons = "RED=L2", hideGuitar = false),
+        )
+        assertEquals(profiles, Profiles.decode(Profiles.encode(profiles)))
+        assertEquals(emptyMap(), Profiles.decode(""))
+        assertEquals(emptyMap(), Profiles.decode(null))
+    }
+}

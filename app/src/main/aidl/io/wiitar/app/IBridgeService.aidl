@@ -6,11 +6,12 @@ interface IBridgeService {
     void destroy() = 16777114;
 
     // Starts bridging every connected guitar (and any that connect later).
-    // config: BridgeConfig.encode(). Returns status().
-    String start(String config) = 1;
+    // config: the shared BridgeConfig.encode(); profiles: Profiles.encode() of per-guitar
+    // settings keyed by guitar id. Returns status().
+    String start(String config, String profiles) = 1;
 
-    // Applies a new BridgeConfig to running guitars immediately.
-    void configure(String config) = 2;
+    // Applies new settings to running guitars immediately.
+    void configure(String config, String profiles) = 2;
 
     // Human-readable status: guitars, sources, latency, errors.
     String status() = 3;
@@ -32,4 +33,7 @@ interface IBridgeService {
 
     // Bridge latency in microseconds: [samples, average, 95th percentile, max].
     long[] latency() = 9;
+
+    // One "slot<TAB>guitar id<TAB>battery %" line per bridged guitar, in slot order.
+    String[] guitars() = 10;
 }

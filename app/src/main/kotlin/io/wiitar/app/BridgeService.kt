@@ -18,8 +18,10 @@ import io.wiitar.bridge.KernelInputDevice
 import io.wiitar.bridge.LatencyStats
 import io.wiitar.bridge.LiveState
 import io.wiitar.bridge.PhysicalInput
+import io.wiitar.bridge.Profiles
 import io.wiitar.bridge.Uhid
 import io.wiitar.bridge.VirtualGamepad
+import io.wiitar.protocol.OutputReports
 import io.wiitar.protocol.TouchStrip
 import java.io.File
 import java.io.RandomAccessFile
@@ -47,6 +49,8 @@ class BridgeService() : IBridgeService.Stub() {
     private var nativeLibraryDir: String? = null
     private val lock = Any()
     private var config = BridgeConfig()
+    private var profiles: Map<String, BridgeConfig> = emptyMap()
+    private var ledWarning = false
     private var running = false
     private val sessions = LinkedHashMap<String, Session>()
     private val errors = ArrayDeque<String>()
@@ -54,10 +58,24 @@ class BridgeService() : IBridgeService.Stub() {
     private var monotonicClock = false
     private var captureWaiting = false
     private var captureResult = ""
+    private var discoveries = 0
+
+    private fun configFor(id: String) = profiles[id] ?: config
 
     /** One bridged guitar. */
     private inner class Session(val slot: Int, val devices: GuitarDevices) {
+        /** The HID device's sysfs directory, home of its LEDs and battery. */
+        val sysfs = File("/sys" + devices.key)
+
+        /** The Wii Remote's Bluetooth address (from its battery's name), or the sysfs key as a fallback. */
+        val id: String = sysfs.resolve("power_supply").list()
+            ?.firstOrNull { it.startsWith("wiimote_battery_") }
+            ?.removePrefix("wiimote_battery_")?.uppercase()
+            ?: devices.key
+        var config = configFor(id)
         var bridge = GuitarBridge(config.mapping(), config.inputs)
+        private var grabbedFd: ParcelFileDescriptor? = null
+        var battery = -1
         val fds = mutableListOf<ParcelFileDescriptor>()
         val uhid: RandomAccessFile = RandomAccessFile("/dev/uhid", "rw")
 
@@ -83,6 +101,29 @@ class BridgeService() : IBridgeService.Stub() {
             }
             read(devices.guitar, devices.source, grab = config.hideGuitar)
             devices.accelerometer?.let { read(it, GuitarSource.ACCELEROMETER, grab = false) }
+            setPlayerLeds()
+            readBattery()
+        }
+
+        /** Lights the Wii Remote's LEDs for this player (1-4 one LED, 5-8 pairs), if sysfs lets us. */
+        fun setPlayerLeds() {
+            val mask = OutputReports.playerLedMask(slot - 1)
+            val leds = sysfs.resolve("leds").listFiles().orEmpty().sortedBy { it.name }
+            for ((i, led) in leds.filter { Regex(":p[0-3]$").containsMatchIn(it.name) }.withIndex()) {
+                try {
+                    led.resolve("brightness").writeText(if (mask and (1 shl i) != 0) "1" else "0")
+                } catch (e: Exception) {
+                    if (!ledWarning) problem("Can't set player LEDs: ${e.message}")
+                    ledWarning = true
+                    return
+                }
+            }
+        }
+
+        fun readBattery() {
+            battery = sysfs.resolve("power_supply").listFiles().orEmpty()
+                .firstNotNullOfOrNull { runCatching { it.resolve("capacity").readText().trim().toInt() }.getOrNull() }
+                ?: -1
         }
 
         private fun read(device: KernelInputDevice, source: GuitarSource, grab: Boolean) {
@@ -94,6 +135,7 @@ class BridgeService() : IBridgeService.Stub() {
                 if (grab) {
                     val result = Evdev.grab(fd.fd, true)
                     hidden = result == 0
+                    if (hidden) grabbedFd = fd
                     if (!hidden) problem("Can't hide $path from games (EVIOCGRAB errno ${-result})")
                 }
             } else if (grab) {
@@ -120,6 +162,9 @@ class BridgeService() : IBridgeService.Stub() {
 
         fun close() {
             alive = false
+            // Release the grab now rather than when the blocked reader thread next wakes up,
+            // so a reopened session can take it again straight away.
+            grabbedFd?.let { runCatching { Evdev.grab(it.fd, false) } }
             try {
                 uhid.write(Uhid.destroy())
                 uhid.close()
@@ -135,9 +180,10 @@ class BridgeService() : IBridgeService.Stub() {
         exitProcess(0)
     }
 
-    override fun start(config: String?): String {
+    override fun start(config: String?, profiles: String?): String {
         synchronized(lock) {
             this.config = BridgeConfig.decode(config)
+            this.profiles = Profiles.decode(profiles)
             if (!running) {
                 running = true
                 thread("wiitar-discovery") {
@@ -156,18 +202,25 @@ class BridgeService() : IBridgeService.Stub() {
         return status()
     }
 
-    override fun configure(config: String?) {
+    override fun configure(config: String?, profiles: String?) {
         synchronized(lock) {
-            val old = this.config
             this.config = BridgeConfig.decode(config)
-            // Analog state is rebuilt from the next events; held buttons re-sync on their next change.
-            sessions.values.forEach { it.bridge = GuitarBridge(this.config.mapping(), this.config.inputs) }
-            if (old.hideGuitar != this.config.hideGuitar) {
-                // Grabs are taken when a guitar is opened; reopen everything to apply the change.
-                sessions.values.forEach { it.close() }
-                sessions.clear()
+            this.profiles = Profiles.decode(profiles)
+            for ((key, session) in sessions.entries.toList()) {
+                val updated = configFor(session.id)
+                if (updated == session.config) continue
+                if (updated.hideGuitar != session.config.hideGuitar) {
+                    // The grab is taken when the device is opened: reopen this guitar (same slot comes back).
+                    session.close()
+                    sessions.remove(key)
+                } else {
+                    // Analog state is rebuilt from the next events; held buttons re-sync on their next change.
+                    session.config = updated
+                    session.bridge = GuitarBridge(updated.mapping(), updated.inputs)
+                }
             }
         }
+        if (running) discover()
     }
 
     private fun discover() {
@@ -179,6 +232,7 @@ class BridgeService() : IBridgeService.Stub() {
             sessions.entries.removeAll { (key, session) ->
                 (key !in keys || !session.alive).also { gone -> if (gone) session.close() }
             }
+            if (++discoveries % BATTERY_REFRESH_ROUNDS == 0) sessions.values.forEach { it.readBattery() }
             for (guitar in found) {
                 if (guitar.key in sessions) continue
                 val slot = (1..MAX_GUITARS).firstOrNull { s -> sessions.values.none { it.slot == s } } ?: break
@@ -222,7 +276,7 @@ class BridgeService() : IBridgeService.Stub() {
 
     override fun liveState(): IntArray = synchronized(lock) {
         sessions.values.sortedBy { it.slot }.flatMap { s ->
-            LiveState.of(s.slot, s.bridge, s.devices.source == GuitarSource.KERNEL_GUITAR, s.touchSeen).toList()
+            LiveState.of(s.slot, s.bridge, s.devices.source == GuitarSource.KERNEL_GUITAR, s.touchSeen, s.battery).toList()
         }.toIntArray()
     }
 
@@ -254,13 +308,18 @@ class BridgeService() : IBridgeService.Stub() {
 
     override fun latency(): LongArray = synchronized(lock) { latency.summary() }
 
+    override fun guitars(): Array<String> = synchronized(lock) {
+        sessions.values.sortedBy { it.slot }.map { "${it.slot}\t${it.id}\t${it.battery}" }.toTypedArray()
+    }
+
     override fun status(): String = synchronized(lock) {
         buildString {
             appendLine(if (running) "Bridge running: ${sessions.size} guitar(s)" else "Bridge not running")
             for (s in sessions.values.sortedBy { it.slot }) {
                 val d = s.devices
                 appendLine(
-                    "Guitar ${s.slot}: \"$VIRTUAL_NAME ${s.slot}\" ← ${d.source} %s%s, accel %s, %d events".format(
+                    "Guitar ${s.slot} (${s.id}, battery ${if (s.battery >= 0) "${s.battery}%" else "?"}${if (s.id in profiles) ", own settings" else ""}): " +
+                        "\"$VIRTUAL_NAME ${s.slot}\" ← ${d.source} %s%s, accel %s, %d events".format(
                         d.guitar.eventHandler,
                         if (s.hidden) " [hidden from games]" else "",
                         d.accelerometer?.eventHandler ?: "none",
@@ -310,5 +369,6 @@ class BridgeService() : IBridgeService.Stub() {
         const val VIRTUAL_NAME = "Wiitar Guitar"
         const val MAX_GUITARS = 8
         const val DISCOVERY_INTERVAL_MS = 1500L
+        const val BATTERY_REFRESH_ROUNDS = 20 // about every 30 s
     }
 }

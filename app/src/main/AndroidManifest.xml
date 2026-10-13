@@ -24,7 +24,7 @@
     <application
         android:name=".WiitarApp"
         android:allowBackup="true"
-        android:icon="@android:drawable/sym_def_app_icon"
+        android:icon="@mipmap/ic_launcher"
         android:label="Wiitar"
         android:theme="@android:style/Theme.DeviceDefault.DayNight">
 
@@ -53,6 +53,14 @@
             android:name=".ProbeActivity"
             android:label="Whammy &amp; tilt probe (Shizuku)"
             android:exported="false" />
+
+        <receiver
+            android:name=".AutoStartReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
+            </intent-filter>
+        </receiver>
 
         <provider
             android:name="rikka.shizuku.ShizukuProvider"

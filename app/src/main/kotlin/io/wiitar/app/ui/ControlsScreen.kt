@@ -49,9 +49,10 @@ import kotlinx.coroutines.withContext
 fun ControlsScreen(state: BridgeUiState, onBack: () -> Unit) {
     // Re-read the saved config whenever something here changes it.
     var version by remember { mutableIntStateOf(0) }
-    val config = remember(version) { BridgeClient.config() }
+    var profileId by remember { mutableStateOf<String?>(null) }
+    val config = remember(version, profileId) { BridgeClient.configFor(profileId) }
     fun update(change: (io.wiitar.bridge.BridgeConfig) -> io.wiitar.bridge.BridgeConfig) {
-        BridgeClient.updateConfig(change)
+        BridgeClient.updateConfig(profileId, change)
         version++
     }
 
@@ -90,6 +91,15 @@ fun ControlsScreen(state: BridgeUiState, onBack: () -> Unit) {
     }
 
     ScreenFrame("Controls", onBack) {
+        if (state.guitars.isNotEmpty()) {
+            Panel {
+                Heading("Settings for")
+                ProfilePicker(state.guitars, profileId) {
+                    profileId = it
+                    version++
+                }
+            }
+        }
         Panel {
             Heading("Guitar controls")
             Text("Tap a control, then press it on the guitar.", Type.dim)

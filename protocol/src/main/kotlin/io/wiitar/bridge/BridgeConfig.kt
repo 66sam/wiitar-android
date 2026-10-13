@@ -66,11 +66,28 @@ data class BridgeConfig(
 }
 
 /**
+ * Per-guitar settings: guitar id (the Wii Remote's Bluetooth address) → its
+ * own [BridgeConfig]. Guitars without an entry use the shared default.
+ */
+object Profiles {
+    private const val RECORD = '\u001E'
+    private const val FIELD = '\u001F'
+
+    fun encode(profiles: Map<String, BridgeConfig>): String =
+        profiles.entries.joinToString(RECORD.toString()) { (id, config) -> "$id$FIELD${config.encode()}" }
+
+    fun decode(text: String?): Map<String, BridgeConfig> =
+        text.orEmpty().split(RECORD).filter { FIELD in it }.associate {
+            it.substringBefore(FIELD) to BridgeConfig.decode(it.substringAfter(FIELD))
+        }
+}
+
+/**
  * One guitar's live state as a flat int array, so the app can poll it over
  * binder cheaply for the on-screen guitar. Floats are scaled by 1000.
  */
 object LiveState {
-    const val SIZE = 11
+    const val SIZE = 12
 
     const val SLOT = 0
     const val FRETS = 1 // bit per Fret.ordinal (buttons and, in FRETS mode, the touch strip)
@@ -83,10 +100,11 @@ object LiveState {
     const val STAR_POWER = 8 // 1 while the tilt button is held
     const val KERNEL_SOURCE = 9 // 1 = kernel guitar device, 0 = the Odin's copy
     const val TOUCH_PRESENT = 10 // 1 once a touch strip has been seen
+    const val BATTERY = 11 // percent, or -1 if unknown
 
     const val NO_TOUCH = -9999
 
-    fun of(slot: Int, bridge: GuitarBridge, kernelSource: Boolean, touchSeen: Boolean): IntArray {
+    fun of(slot: Int, bridge: GuitarBridge, kernelSource: Boolean, touchSeen: Boolean, battery: Int = -1): IntArray {
         val s = bridge.state
         val fretBits = (s.frets + if (bridge.touchFretsActive) s.touchFrets else emptySet())
             .fold(0) { bits, fret -> bits or (1 shl fret.ordinal) }
@@ -102,6 +120,7 @@ object LiveState {
             if (bridge.tiltButtonHeld) 1 else 0,
             if (kernelSource) 1 else 0,
             if (touchSeen) 1 else 0,
+            battery,
         )
     }
 }

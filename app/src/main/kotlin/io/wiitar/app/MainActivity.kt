@@ -99,7 +99,12 @@ data class BridgeUiState(
     val guitarAttached: Boolean = false,
     /** [io.wiitar.bridge.LiveState] slices, one per bridged guitar. */
     val live: List<IntArray> = emptyList(),
+    /** Bridged guitars in slot order. */
+    val guitars: List<GuitarInfo> = emptyList(),
 )
+
+/** A bridged guitar: player [slot], [id] (Wii Remote Bluetooth address), [battery] percent or -1. */
+data class GuitarInfo(val slot: Int, val id: String, val battery: Int)
 
 @Composable
 fun rememberBridgeState(): State<BridgeUiState> {
@@ -110,7 +115,15 @@ fun rememberBridgeState(): State<BridgeUiState> {
         while (true) {
             // Cheap live data every frame-ish; Shizuku and device checks a few times a second.
             if (tick++ % 10 == 0) {
+                val guitars = BridgeClient.service?.takeIf { BridgeClient.running }?.let { s ->
+                    withContext(Dispatchers.IO) { runCatching { s.guitars().toList() }.getOrNull() }
+                }.orEmpty().mapNotNull { line ->
+                    val f = line.split('\t')
+                    val slot = f.getOrNull(0)?.toIntOrNull() ?: return@mapNotNull null
+                    GuitarInfo(slot, f.getOrElse(1) { "" }, f.getOrNull(2)?.toIntOrNull() ?: -1)
+                }
                 slow = BridgeUiState(
+                    guitars = guitars,
                     shizuku = BridgeClient.shizukuState(),
                     running = BridgeClient.running,
                     wiimotes = countDevices { it == "Nintendo Wii Remote" },

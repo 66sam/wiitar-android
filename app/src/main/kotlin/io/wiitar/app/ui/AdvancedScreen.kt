@@ -20,6 +20,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import io.wiitar.app.BridgeClient
 import io.wiitar.app.GuidedTestActivity
 import io.wiitar.app.InputDiagnosticsActivity
 import io.wiitar.app.PairingActivity
@@ -52,6 +57,18 @@ fun AdvancedScreen(onOpen: (Screen) -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
     fun launch(cls: Class<*>) = context.startActivity(Intent(context, cls))
     ScreenFrame("Advanced", onBack) {
+        Panel {
+            var autoStart by remember { mutableStateOf(BridgeClient.autoStart) }
+            ToggleRow(
+                "Start automatically",
+                "Start the bridge whenever Shizuku is running: when the app opens, when Shizuku starts, " +
+                    "and when a Wii Remote connects.",
+                autoStart,
+            ) {
+                BridgeClient.autoStart = it
+                autoStart = it
+            }
+        }
         Panel {
             Heading("Set up")
             NavRow("Controls", "Press a guitar control to assign it, touch strip, gamepad buttons") { onOpen(Screen.CONTROLS) }
