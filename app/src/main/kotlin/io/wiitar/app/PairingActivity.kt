@@ -18,6 +18,7 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.text.InputType
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -69,8 +70,6 @@ class PairingActivity : Activity() {
                         intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, -1),
                     )
                 }
-                BluetoothDevice.ACTION_ACL_CONNECTED -> if (device != null) log("Link up: ${describe(device)}")
-                BluetoothDevice.ACTION_ACL_DISCONNECTED -> if (device != null) log("Link down: ${describe(device)}")
             }
         }
     }
@@ -118,6 +117,15 @@ class PairingActivity : Activity() {
         deviceList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         column.addView(deviceList)
 
+        column.heading("3. Connect")
+        column.paragraph(
+            "Pairing doesn't connect the controller by itself.\n" +
+                "• SYNC-paired: press any button on the Wii Remote; it connects to this device on its own.\n" +
+                "• 1+2-paired: hold 1+2 until the LEDs blink, then tap the Wii Remote in Android's Bluetooth settings.\n" +
+                "The log shows \"HID input profile … connected\" when it worked.",
+        )
+        column.button("Open Bluetooth settings") { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
+
         column.heading("Log")
         column.button("Copy log") { copyToClipboard("wiitar pairing log", DiagnosticLog.text()) }
         logView = column.monospace()
@@ -129,8 +137,6 @@ class PairingActivity : Activity() {
             addAction(BluetoothDevice.ACTION_NAME_CHANGED)
             addAction(BluetoothDevice.ACTION_PAIRING_REQUEST)
             addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
-            addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
-            addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
             // Answer the PIN request before the system Settings dialog does.
             priority = IntentFilter.SYSTEM_HIGH_PRIORITY - 1
         }
@@ -254,7 +260,7 @@ class PairingActivity : Activity() {
     private fun onBondStateChanged(device: BluetoothDevice, previous: Int, state: Int) {
         log("Bond state ${describe(device)}: ${bondName(previous)} → ${bondName(state)}")
         if (state == BluetoothDevice.BOND_BONDED && isWiimote(device)) {
-            log("Paired! Open Input diagnostics and press the guitar's buttons.")
+            log("Paired. Now connect it (step 3), then open Input diagnostics.")
         } else if (previous == BluetoothDevice.BOND_BONDING && state == BluetoothDevice.BOND_NONE) {
             log("Pairing failed. Check the method above matches the button you pressed, then try again.")
         }
@@ -299,11 +305,3 @@ class PairingActivity : Activity() {
         const val REQUEST_PERMISSIONS = 1
     }
 }
-
-private fun Intent.bluetoothDevice(): BluetoothDevice? =
-    if (Build.VERSION.SDK_INT >= 33) {
-        getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
-    } else {
-        @Suppress("DEPRECATION")
-        getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
-    }

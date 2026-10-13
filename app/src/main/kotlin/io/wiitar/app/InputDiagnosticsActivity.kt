@@ -26,6 +26,7 @@ class InputDiagnosticsActivity : Activity(), InputManager.InputDeviceListener {
     private lateinit var devicesView: TextView
     private lateinit var liveView: TextView
     private lateinit var logView: TextView
+    private lateinit var bluetoothView: TextView
 
     /** Latest axis values per device id, for the live view. */
     private val liveAxes = LinkedHashMap<Int, String>()
@@ -45,6 +46,7 @@ class InputDiagnosticsActivity : Activity(), InputManager.InputDeviceListener {
                 "and slide along the touch strip if it has one. Then tap Copy report and send it back.",
         )
         column.button("Copy report") { copyToClipboard("wiitar input report", report()) }
+        bluetoothView = column.monospace()
         column.heading("Live")
         liveView = column.monospace("(press something on an external controller)")
         column.heading("Input devices")
@@ -79,7 +81,9 @@ class InputDiagnosticsActivity : Activity(), InputManager.InputDeviceListener {
     }
 
     override fun onInputDeviceChanged(deviceId: Int) {
-        log("device changed: #$deviceId")
+        // Built-in devices (e.g. the touchscreen) report changes constantly; only external ones are interesting.
+        val device = InputDevice.getDevice(deviceId)
+        if (device == null || device.isExternal) log("device changed: ${device?.let { summary(it) } ?: deviceId}")
         refreshDevices()
     }
 
@@ -130,6 +134,7 @@ class InputDiagnosticsActivity : Activity(), InputManager.InputDeviceListener {
     }
 
     private fun refreshDevices() {
+        bluetoothView.text = WiitarApp.pairedWiimotesSummary(this)
         devicesView.text = deviceListing()
     }
 
@@ -170,6 +175,7 @@ class InputDiagnosticsActivity : Activity(), InputManager.InputDeviceListener {
     private fun report(): String = buildString {
         appendLine("Wiitar input report")
         appendLine("${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}), kernel ${System.getProperty("os.version")}")
+        appendLine(WiitarApp.pairedWiimotesSummary(this@InputDiagnosticsActivity))
         appendLine()
         appendLine("== Input devices ==")
         append(deviceListing())
