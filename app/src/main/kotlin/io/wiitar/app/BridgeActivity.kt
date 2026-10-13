@@ -17,6 +17,8 @@ import android.widget.CheckBox
 import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.TextView
+import io.wiitar.bridge.TiltCalibration
+import io.wiitar.bridge.Vec3
 import rikka.shizuku.Shizuku
 
 /**
@@ -27,6 +29,8 @@ class BridgeActivity : Activity() {
     private lateinit var statusView: TextView
     private lateinit var tiltAxisGroup: RadioGroup
     private lateinit var tiltInvert: CheckBox
+    private lateinit var calibrationView: TextView
+    private var capturedRest: Vec3? = null
     private val handler = Handler(Looper.getMainLooper())
 
     @Volatile
@@ -51,7 +55,8 @@ class BridgeActivity : Activity() {
                 startWhenConnected = false
                 val axis = tiltAxisGroup.checkedRadioButtonId
                 val invert = tiltInvert.isChecked
-                background { s.start(axis, invert) }
+                val calibration = savedCalibration()
+                background { s.start(axis, invert, calibration) }
             }
         }
 
@@ -93,9 +98,21 @@ class BridgeActivity : Activity() {
                 "Needs Shizuku running (see the probe screen). The bridge keeps running in the background until you stop it, " +
                 "the Wii Remote disconnects, or the device reboots.\n\n" +
                 "Default layout: Green A · Red B · Yellow Y · Blue X · Orange LB · strum D-pad up/down · " +
-                "plus Start · minus Select · whammy right stick X (Z) · tilt right stick Y (RZ) and RB when tilted.",
+                "plus Start · minus Select · whammy right stick X (Z) · tilt right stick Y (RZ), and RB when tilted past about 60%.",
         )
-        column.heading("Tilt axis")
+        column.heading("Tilt calibration")
+        column.paragraph(
+            "With the bridge running: hold the guitar the way you play and tap 1, then raise the neck " +
+                "as you would for star power and tap 2. Tilt is then measured along that motion, " +
+                "however the Wii Remote sits in your guitar.",
+        )
+        calibrationView = column.paragraph()
+        column.button("1. Holding normally — capture") { captureRest() }
+        column.button("2. Neck raised — capture") { captureUp() }
+        column.button("Clear calibration") { applyCalibration(null) }
+        renderCalibration()
+
+        column.heading("Tilt axis (only used without calibration)")
         column.paragraph("Watch the Tilt line below while raising the neck; pick the axis whose angle goes up. Applies on next start.")
         tiltAxisGroup = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
         listOf("X", "Y", "Z").forEachIndexed { i, label ->
@@ -140,7 +157,8 @@ class BridgeActivity : Activity() {
         if (s != null) {
             val axis = tiltAxisGroup.checkedRadioButtonId
             val invert = tiltInvert.isChecked
-            background { s.start(axis, invert) }
+            val calibration = savedCalibration()
+            background { s.start(axis, invert, calibration) }
             return
         }
         startWhenConnected = true
@@ -149,6 +167,60 @@ class BridgeActivity : Activity() {
             Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED -> Shizuku.requestPermission(REQUEST_SHIZUKU)
             else -> bind()
         }
+    }
+
+    private fun savedCalibration(): String =
+        getSharedPreferences("bridge", MODE_PRIVATE).getString("tiltCalibration", "").orEmpty()
+
+    private fun renderCalibration() {
+        val c = TiltCalibration.decode(savedCalibration())
+        calibrationView.text = when {
+            capturedRest != null -> "Step 1 captured. Now raise the neck and tap 2."
+            c == null -> "Not calibrated (using the fixed axis below)."
+            !c.usable -> "Calibration unusable: the two poses were almost the same. Capture again with a bigger tilt."
+            else -> "Calibrated ✓"
+        }
+    }
+
+    /** Reads the bridge's current gravity vector off the main thread, then hands it to [then] on the main thread. */
+    private fun withGravity(then: (Vec3) -> Unit) {
+        val s = service ?: run {
+            calibrationView.text = "Start the bridge first."
+            return
+        }
+        background {
+            val g = Vec3.decode(s.gravity())
+            runOnUiThread {
+                if (g == null) {
+                    calibrationView.text = "No accelerometer data yet. Is the guitar connected?"
+                } else {
+                    then(g)
+                }
+            }
+        }
+    }
+
+    private fun captureRest() = withGravity {
+        capturedRest = it
+        renderCalibration()
+    }
+
+    private fun captureUp() = withGravity { up ->
+        val rest = capturedRest ?: run {
+            calibrationView.text = "Do step 1 first."
+            return@withGravity
+        }
+        capturedRest = null
+        applyCalibration(TiltCalibration(rest, up))
+    }
+
+    private fun applyCalibration(calibration: TiltCalibration?) {
+        capturedRest = null
+        val encoded = calibration?.encode().orEmpty()
+        getSharedPreferences("bridge", MODE_PRIVATE).edit().putString("tiltCalibration", encoded).apply()
+        DiagnosticLog.add("[bridge] tilt calibration: ${encoded.ifEmpty { "cleared" }}")
+        renderCalibration()
+        service?.let { s -> background { s.setTiltCalibration(encoded) } }
     }
 
     private fun stop() {
@@ -187,7 +259,7 @@ class BridgeActivity : Activity() {
 
     private companion object {
         const val REQUEST_SHIZUKU = 43
-        const val SERVICE_VERSION = 1
+        const val SERVICE_VERSION = 2 // bump when IBridgeService changes so Shizuku restarts the daemon
         const val REFRESH_MS = 300L
     }
 }

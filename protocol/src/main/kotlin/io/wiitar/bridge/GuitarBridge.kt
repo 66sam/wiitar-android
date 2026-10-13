@@ -58,7 +58,14 @@ data class BridgeMapping(
     /** Button pressed while tilt exceeds [tiltButtonThreshold] (for games that want star power on a button). */
     val tiltButton: VirtualGamepad.Button? = VirtualGamepad.Button.R1,
     val tiltButtonThreshold: Float = 0.6f,
+    /** The tilt button releases below this, so sensor noise near the threshold doesn't make it flicker. */
+    val tiltButtonRelease: Float = 0.4f,
+    /** Used when there is no [tiltCalibration]: a fixed accelerometer axis. */
     val tilt: TiltConfig = TiltConfig(),
+    /** Measured rest/raised poses; preferred over [tilt] when set and usable. */
+    val tiltCalibration: TiltCalibration? = null,
+    /** Low-pass factor for the accelerometer (0..1, higher = less smoothing). */
+    val tiltSmoothing: Float = 0.25f,
 )
 
 /**
@@ -71,6 +78,12 @@ class GuitarBridge(private val mapping: BridgeMapping = BridgeMapping()) {
 
     private val whammyRange = AutoRange(minimumSpan = 8)
     private val accel = IntArray(3)
+    private var tiltButtonDown = false
+    private var accelDirty = false
+
+    /** Smoothed gravity direction from the accelerometer (raw counts), or null before the first sample. */
+    var gravity: Vec3? = null
+        private set
     private var lastReport: ByteArray? = null
     private var pending = false
 
@@ -82,7 +95,13 @@ class GuitarBridge(private val mapping: BridgeMapping = BridgeMapping()) {
         when (event.type) {
             EvdevEvent.EV_KEY -> onKey(source, event.code, event.value != 0)
             EvdevEvent.EV_ABS -> onAbs(source, event.code, event.value)
-            EvdevEvent.EV_SYN -> if (event.code == EvdevEvent.SYN_REPORT && pending) {
+            EvdevEvent.EV_SYN -> if (event.code == EvdevEvent.SYN_REPORT) {
+                if (source == GuitarSource.ACCELEROMETER && accelDirty) {
+                    accelDirty = false
+                    state = state.copy(tilt = updateTilt())
+                    pending = true
+                }
+                if (!pending) return null
                 pending = false
                 val report = report()
                 if (!report.contentEquals(lastReport)) {
@@ -102,7 +121,7 @@ class GuitarBridge(private val mapping: BridgeMapping = BridgeMapping()) {
             if (s.plus) add(mapping.plus)
             if (s.minus) add(mapping.minus)
             val tiltButton = mapping.tiltButton
-            if (tiltButton != null && (s.tilt?.amount ?: 0f) >= mapping.tiltButtonThreshold) add(tiltButton)
+            if (tiltButton != null && tiltButtonDown) add(tiltButton)
         }
         val hat = when {
             s.strumUp && !s.strumDown -> VirtualGamepad.Hat.UP
@@ -142,9 +161,9 @@ class GuitarBridge(private val mapping: BridgeMapping = BridgeMapping()) {
                 val axis = code - Codes.ABS_RX
                 if (axis !in 0..2) return
                 accel[axis] = value
-                // The kernel reports raw 10-bit counts minus 0x200; add it back for TiltCalculator.
-                val raw = AccelRaw(accel[0] + 0x200, accel[1] + 0x200, accel[2] + 0x200)
-                state.copy(tilt = TiltCalculator.compute(raw, AccelCalibration.DEFAULT, mapping.tilt))
+                // Tilt is computed once the frame is complete (SYN_REPORT), not per axis.
+                accelDirty = true
+                return
             }
             GuitarSource.KERNEL_GUITAR -> when (code) {
                 // hid-wiimote: stick is (raw - 0x20), so about -32..31.
@@ -163,6 +182,26 @@ class GuitarBridge(private val mapping: BridgeMapping = BridgeMapping()) {
             }
         }
         pending = true
+    }
+
+    private fun updateTilt(): Tilt {
+        // The kernel reports raw 10-bit counts minus 0x200, i.e. already centred on zero g.
+        val sample = Vec3(accel[0].toFloat(), accel[1].toFloat(), accel[2].toFloat())
+        val g = gravity?.let { it + (sample - it) * mapping.tiltSmoothing } ?: sample
+        gravity = g
+        val calibration = mapping.tiltCalibration?.takeIf { it.usable }
+        val tilt = if (calibration != null) {
+            Tilt(calibration.degreesFromRest(g), calibration.amount(g))
+        } else {
+            val raw = AccelRaw(g.x.toInt() + 0x200, g.y.toInt() + 0x200, g.z.toInt() + 0x200)
+            TiltCalculator.compute(raw, AccelCalibration.DEFAULT, mapping.tilt)
+        }
+        tiltButtonDown = if (tiltButtonDown) {
+            tilt.amount > mapping.tiltButtonRelease
+        } else {
+            tilt.amount >= mapping.tiltButtonThreshold
+        }
+        return tilt
     }
 
     /** hid-wiimote reports the raw 5-bit strip value; 0x0F means "not touched". */

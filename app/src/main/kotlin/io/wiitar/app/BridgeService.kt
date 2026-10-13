@@ -11,6 +11,7 @@ import io.wiitar.bridge.EvdevEvent
 import io.wiitar.bridge.GuitarBridge
 import io.wiitar.bridge.GuitarSource
 import io.wiitar.bridge.KernelInputDevice
+import io.wiitar.bridge.TiltCalibration
 import io.wiitar.bridge.Uhid
 import io.wiitar.bridge.VirtualGamepad
 import io.wiitar.protocol.Axis
@@ -52,11 +53,17 @@ class BridgeService() : IBridgeService.Stub() {
         exitProcess(0)
     }
 
-    override fun start(tiltAxis: Int, tiltInvert: Boolean): String {
+    private var mapping = BridgeMapping()
+
+    override fun start(tiltAxis: Int, tiltInvert: Boolean, tiltCalibration: String?): String {
         synchronized(lock) {
             if (bridge != null) return status()
+            mapping = BridgeMapping(
+                tilt = TiltConfig(axis = Axis.entries[tiltAxis.coerceIn(0, 2)], invert = tiltInvert),
+                tiltCalibration = TiltCalibration.decode(tiltCalibration),
+            )
             try {
-                startLocked(TiltConfig(axis = Axis.entries[tiltAxis.coerceIn(0, 2)], invert = tiltInvert))
+                startLocked()
             } catch (e: Exception) {
                 problem("start failed: $e")
             }
@@ -64,7 +71,7 @@ class BridgeService() : IBridgeService.Stub() {
         return status()
     }
 
-    private fun startLocked(tilt: TiltConfig) {
+    private fun startLocked() {
         val devices = KernelInputDevice.parseAll(File("/proc/bus/input/devices").readText())
         fun node(d: KernelInputDevice) = d.eventHandler?.let { "/dev/input/$it" }?.takeIf { File(it).canRead() }
 
@@ -84,7 +91,7 @@ class BridgeService() : IBridgeService.Stub() {
             return
         }
 
-        val newBridge = GuitarBridge(BridgeMapping(tilt = tilt))
+        val newBridge = GuitarBridge(mapping)
         val device = RandomAccessFile("/dev/uhid", "rw")
         device.write(Uhid.create2(VIRTUAL_NAME, VirtualGamepad.DESCRIPTOR, VirtualGamepad.VENDOR, VirtualGamepad.PRODUCT))
         device.write(Uhid.input2(newBridge.report()))
@@ -141,6 +148,16 @@ class BridgeService() : IBridgeService.Stub() {
         while (device.read(buffer) > 0) Unit
     }
 
+    override fun gravity(): String = synchronized(lock) { bridge?.gravity?.encode().orEmpty() }
+
+    override fun setTiltCalibration(tiltCalibration: String?) {
+        synchronized(lock) {
+            mapping = mapping.copy(tiltCalibration = TiltCalibration.decode(tiltCalibration))
+            // Analog state is rebuilt from the next events; held buttons re-sync on their next change.
+            if (bridge != null) bridge = GuitarBridge(mapping)
+        }
+    }
+
     override fun status(): String = synchronized(lock) {
         buildString {
             val b = bridge
@@ -155,8 +172,10 @@ class BridgeService() : IBridgeService.Stub() {
                     s.whammy?.let { "%.2f".format(it) } ?: "n/a",
                     s.touchStrip?.let { "%+.2f".format(it) } ?: "-",
                 ))
-                appendLine("Tilt: %s  (accel raw X %d, Y %d, Z %d)".format(
+                val calibrated = mapping.tiltCalibration?.takeIf { it.usable } != null
+                appendLine("Tilt: %s %s  (accel raw X %d, Y %d, Z %d)".format(
                     s.tilt?.let { "%.0f° → %.2f".format(it.degrees, it.amount) } ?: "n/a",
+                    if (calibrated) "[calibrated]" else "[axis ${mapping.tilt.axis}${if (mapping.tilt.invert) ", inverted" else ""}]",
                     accelRaw[0], accelRaw[1], accelRaw[2],
                 ))
             }

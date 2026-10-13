@@ -159,7 +159,7 @@ class BridgeTest {
 
     @Test
     fun `accelerometer tilt drives axis and star power button`() {
-        val bridge = GuitarBridge() // tilt axis Y, 0..45 degrees, button at 0.6
+        val bridge = GuitarBridge(BridgeMapping(tiltSmoothing = 1f)) // tilt axis Y, 0..45 degrees, button at 0.6
         // Level: gravity on Z (~ +104 counts per g with the default calibration).
         bridge.onEvent(GuitarSource.ACCELEROMETER, EvdevEvent(EvdevEvent.EV_ABS, Codes.ABS_RZ, 104))
         bridge.feed(GuitarSource.ACCELEROMETER, EvdevEvent.EV_ABS, Codes.ABS_RY, 0)
@@ -170,5 +170,59 @@ class BridgeTest {
         assertEquals(1f, bridge.state.tilt!!.amount)
         val buttons = ByteBuffer.wrap(r).order(ByteOrder.LITTLE_ENDIAN).getShort(0).toInt()
         assertEquals(1 shl (VirtualGamepad.Button.R1.hidIndex - 1), buttons)
+    }
+
+    private fun GuitarBridge.accel(x: Int, y: Int, z: Int): ByteArray? {
+        onEvent(GuitarSource.ACCELEROMETER, EvdevEvent(EvdevEvent.EV_ABS, Codes.ABS_RX, x))
+        onEvent(GuitarSource.ACCELEROMETER, EvdevEvent(EvdevEvent.EV_ABS, Codes.ABS_RY, y))
+        onEvent(GuitarSource.ACCELEROMETER, EvdevEvent(EvdevEvent.EV_ABS, Codes.ABS_RZ, z))
+        return onEvent(GuitarSource.ACCELEROMETER, EvdevEvent(EvdevEvent.EV_SYN, EvdevEvent.SYN_REPORT, 0))
+    }
+
+    @Test
+    fun `calibrated tilt follows the user's own motion`() {
+        // A mounting where "normal" has gravity mostly on X and "neck up" moves it to -Z.
+        val calibration = TiltCalibration(rest = Vec3(100f, 0f, 0f), up = Vec3(0f, 0f, -100f))
+        val bridge = GuitarBridge(BridgeMapping(tiltCalibration = calibration, tiltSmoothing = 1f))
+        bridge.accel(100, 0, 0)
+        assertEquals(0f, bridge.state.tilt!!.amount, 0.01f)
+        bridge.accel(70, 0, -70) // halfway (45 degrees)
+        assertEquals(0.5f, bridge.state.tilt!!.amount, 0.05f)
+        assertEquals(45f, bridge.state.tilt!!.degrees, 1f)
+        bridge.accel(0, 0, -100)
+        assertEquals(1f, bridge.state.tilt!!.amount, 0.01f)
+        // Tilting the other way never goes below zero.
+        bridge.accel(70, 0, 70)
+        assertEquals(0f, bridge.state.tilt!!.amount, 0.01f)
+    }
+
+    @Test
+    fun `tilt calibration round trips and rejects identical poses`() {
+        val c = TiltCalibration(Vec3(1f, 2f, 3f), Vec3(-4f, 5.5f, 6f))
+        assertEquals(c, TiltCalibration.decode(c.encode()))
+        assertNull(TiltCalibration.decode("garbage"))
+        assertTrue(!TiltCalibration(Vec3(0f, 0f, 100f), Vec3(0f, 1f, 100f)).usable)
+    }
+
+    @Test
+    fun `star power button has hysteresis`() {
+        val calibration = TiltCalibration(rest = Vec3(100f, 0f, 0f), up = Vec3(0f, 0f, -100f))
+        val bridge = GuitarBridge(BridgeMapping(tiltCalibration = calibration, tiltSmoothing = 1f))
+        val r1 = VirtualGamepad.Button.R1.hidIndex - 1
+        fun pressed(r: ByteArray?) = r?.let { ByteBuffer.wrap(it).order(ByteOrder.LITTLE_ENDIAN).getShort(0).toInt() shr r1 and 1 == 1 }
+        bridge.accel(100, 0, 0)
+        assertTrue(pressed(bridge.accel(20, 0, -98)) == true) // ~0.9: pressed
+        bridge.accel(50, 0, -87) // ~0.67: still above release
+        assertTrue(pressed(bridge.report()) == true)
+        bridge.accel(87, 0, -50) // ~0.33: below release
+        assertTrue(pressed(bridge.report()) == false)
+    }
+
+    @Test
+    fun `accelerometer is smoothed`() {
+        val bridge = GuitarBridge(BridgeMapping(tiltSmoothing = 0.5f))
+        bridge.accel(0, 0, 100)
+        bridge.accel(0, 0, 0)
+        assertEquals(50f, bridge.gravity!!.z, 0.01f)
     }
 }
