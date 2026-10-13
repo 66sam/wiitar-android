@@ -28,6 +28,7 @@ import io.wiitar.protocol.WiimotePairing
 class WiitarApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        BridgeClient.init(this)
         val filter = IntentFilter().apply {
             addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
             addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)

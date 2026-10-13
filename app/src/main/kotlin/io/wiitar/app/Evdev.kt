@@ -47,4 +47,12 @@ object Evdev {
     /** EVIOCGRAB; returns 0 or -errno. Call [load] first. */
     @JvmStatic
     external fun grab(fd: Int, grab: Boolean): Int
+
+    /** EVIOCSCLOCKID(CLOCK_MONOTONIC), so event times compare with System.nanoTime(); 0 or -errno. */
+    @JvmStatic
+    external fun useMonotonicClock(fd: Int): Int
+
+    /** Rumbles the force-feedback device at [path] for [millis] ms (blocks); 0 or -errno. */
+    @JvmStatic
+    external fun rumble(path: String, millis: Int): Int
 }

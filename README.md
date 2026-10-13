@@ -188,6 +188,26 @@ built-in "Xbox" pad, so the Odin's controller layer probably re-presents it.
 | Whammy | nothing |
 | Tilt | nothing (no accelerometer device is exposed) |
 
+### Using the app
+
+The home screen walks through the three things needed: Shizuku running and
+allowed, a Wii Remote + guitar connected, and the bridge started. While the
+bridge runs, each connected guitar gets its own virtual controller ("Wiitar
+Guitar 1", "Wiitar Guitar 2", …). The home screen shows each one live, with a
+**Buzz** button that rumbles that Wii Remote so you can tell players apart.
+Guitars can connect and disconnect while the bridge runs.
+
+**Advanced** holds the rest:
+- **Controls**: tap a control, then press it on the guitar to assign it. Also
+  the touch-strip mode (axis / press frets / whammy / off), the gamepad
+  buttons each control sends, and the "hide the guitar's own device" option.
+- **Tilt**: two-step calibration (playing position, neck raised).
+- **Latency & status**: the bridge's own delay (guitar event → virtual
+  gamepad) and Android's (virtual gamepad → app), plus the bridge's status
+  for bug reports.
+- The pairing helper, guided test, input diagnostics and system probe used
+  during development.
+
 ### Guitar bridge (no root, via Shizuku)
 
 The **Guitar bridge** screen starts a background service through

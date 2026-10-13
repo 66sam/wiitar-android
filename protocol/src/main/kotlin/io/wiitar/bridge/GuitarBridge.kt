@@ -12,6 +12,7 @@ import io.wiitar.protocol.Fret
 import io.wiitar.protocol.Tilt
 import io.wiitar.protocol.TiltCalculator
 import io.wiitar.protocol.TiltConfig
+import io.wiitar.protocol.TouchStrip
 
 /** Which evdev device an event came from. */
 enum class GuitarSource {
@@ -38,8 +39,24 @@ data class GuitarInput(
     val whammy: Float? = null,
     /** -1..1 along the strip, or null when not touched / not present. */
     val touchStrip: Float? = null,
+    /** Frets under the finger on the touch strip (kernel source only; the Odin's copy can't tell). */
+    val touchFrets: Set<Fret> = emptySet(),
     val tilt: Tilt? = null,
 )
+
+/** What the World Tour-style touch strip does on the virtual gamepad. */
+enum class TouchStripMode(val label: String) {
+    /** Position on [BridgeMapping.touchStripAxis]. */
+    AXIS("Separate axis"),
+
+    /** Touching a section presses that fret (tap notes), together with the fret buttons. */
+    FRETS("Press frets"),
+
+    /** Acts as the whammy bar when the guitar's real whammy isn't readable. */
+    WHAMMY("Whammy"),
+
+    OFF("Off"),
+}
 
 /**
  * Where each guitar input goes on the virtual gamepad.
@@ -72,19 +89,29 @@ data class BridgeMapping(
     val tiltCalibration: TiltCalibration? = null,
     /** Low-pass factor for the accelerometer (0..1, higher = less smoothing). */
     val tiltSmoothing: Float = 0.25f,
+    val touchStripMode: TouchStripMode = TouchStripMode.AXIS,
 )
 
 /**
  * Turns evdev events from the guitar's input devices into virtual-gamepad
  * reports. Pure logic, no I/O: feed [onEvent], send what it returns.
  */
-class GuitarBridge(private val mapping: BridgeMapping = BridgeMapping()) {
+class GuitarBridge(
+    private val mapping: BridgeMapping = BridgeMapping(),
+    private val inputs: InputLayout = InputLayout.DEFAULT,
+) {
     var state = GuitarInput()
         private set
 
     private val whammyRange = AutoRange(minimumSpan = 8)
     private val accel = IntArray(3)
     private var tiltButtonDown = false
+
+    /** True while tilt is holding the star power button. */
+    val tiltButtonHeld: Boolean get() = tiltButtonDown
+
+    /** True when the touch strip presses frets (see [TouchStripMode.FRETS]). */
+    val touchFretsActive: Boolean get() = mapping.touchStripMode == TouchStripMode.FRETS
     private var accelDirty = false
 
     /** Smoothed gravity direction from the accelerometer (raw counts), or null before the first sample. */
@@ -124,6 +151,7 @@ class GuitarBridge(private val mapping: BridgeMapping = BridgeMapping()) {
     fun pressedButtons(): Set<VirtualGamepad.Button> = buildSet {
         val s = state
         s.frets.forEach { mapping.frets[it]?.let(::add) }
+        if (mapping.touchStripMode == TouchStripMode.FRETS) s.touchFrets.forEach { mapping.frets[it]?.let(::add) }
         if (s.plus) add(mapping.plus)
         if (s.minus) add(mapping.minus)
         val tiltButton = mapping.tiltButton
@@ -142,30 +170,48 @@ class GuitarBridge(private val mapping: BridgeMapping = BridgeMapping()) {
         axes[VirtualGamepad.Axis.X.ordinal] = s.stickX
         axes[VirtualGamepad.Axis.Y.ordinal] = s.stickY
         // Unipolar inputs span the whole axis so "released" reads as -1 and "full" as +1.
-        s.whammy?.let { axes[mapping.whammyAxis.ordinal] = it * 2 - 1 }
+        effectiveWhammy()?.let { axes[mapping.whammyAxis.ordinal] = it * 2 - 1 }
         s.tilt?.let { axes[mapping.tiltAxis.ordinal] = it.amount * 2 - 1 }
-        s.touchStrip?.let { axes[mapping.touchStripAxis.ordinal] = it }
+        if (mapping.touchStripMode == TouchStripMode.AXIS) s.touchStrip?.let { axes[mapping.touchStripAxis.ordinal] = it }
         return VirtualGamepad.report(buttons, hat, axes)
     }
 
+    /** Whammy as sent to the gamepad: the real bar, or the touch strip standing in for it. */
+    fun effectiveWhammy(): Float? {
+        val s = state
+        if (s.whammy != null || mapping.touchStripMode != TouchStripMode.WHAMMY) return s.whammy
+        // Released strip = whammy at rest; touching anywhere pushes it, further right pushes more.
+        return s.touchStrip?.let { 0.5f + it / 2 } ?: 0f
+    }
+
     private fun onKey(source: GuitarSource, code: Int, down: Boolean) {
-        val fret = when (source) {
-            GuitarSource.KERNEL_GUITAR -> KERNEL_FRETS[code]
-            GuitarSource.ODIN_GUITAR -> ODIN_FRETS[code]
-            GuitarSource.ACCELEROMETER -> null
-        }
-        state = when {
-            fret != null -> state.copy(frets = if (down) state.frets + fret else state.frets - fret)
-            code == Codes.BTN_START -> state.copy(plus = down)
-            code == Codes.BTN_SELECT -> state.copy(minus = down)
-            code == Codes.BTN_DPAD_UP -> state.copy(strumUp = down)
-            code == Codes.BTN_DPAD_DOWN -> state.copy(strumDown = down)
-            else -> return
-        }
+        val controls = inputs.forSource(source).filterValues { it.type == EvdevEvent.EV_KEY && it.code == code }.keys
+        if (controls.isEmpty()) return
+        controls.forEach { setControl(it, down) }
         pending = true
     }
 
+    /** Hat-style axes bound to controls (e.g. the Odin's strum). Returns true if any binding matched. */
+    private fun onBoundAxis(source: GuitarSource, code: Int, value: Int): Boolean {
+        val bound = inputs.forSource(source).filterValues { it.type == EvdevEvent.EV_ABS && it.code == code }
+        bound.forEach { (control, input) -> setControl(control, input.pressed(value)) }
+        return bound.isNotEmpty()
+    }
+
+    private fun setControl(control: GuitarControl, down: Boolean) {
+        val s = state
+        val fret = control.fret
+        state = when {
+            fret != null -> s.copy(frets = if (down) s.frets + fret else s.frets - fret)
+            control == GuitarControl.STRUM_UP -> s.copy(strumUp = down)
+            control == GuitarControl.STRUM_DOWN -> s.copy(strumDown = down)
+            control == GuitarControl.PLUS -> s.copy(plus = down)
+            else -> s.copy(minus = down)
+        }
+    }
+
     private fun onAbs(source: GuitarSource, code: Int, value: Int) {
+        if (source != GuitarSource.ACCELEROMETER && onBoundAxis(source, code, value)) pending = true
         state = when (source) {
             GuitarSource.ACCELEROMETER -> {
                 val axis = code - Codes.ABS_RX
@@ -179,7 +225,10 @@ class GuitarBridge(private val mapping: BridgeMapping = BridgeMapping()) {
                 // hid-wiimote: stick is (raw - 0x20), so about -32..31.
                 Codes.ABS_X -> state.copy(stickX = (value / 31f).coerceIn(-1f, 1f))
                 Codes.ABS_Y -> state.copy(stickY = (value / 31f).coerceIn(-1f, 1f))
-                Codes.ABS_HAT0X -> state.copy(touchStrip = kernelTouchStrip(value))
+                Codes.ABS_HAT0X -> state.copy(
+                    touchStrip = kernelTouchStrip(value),
+                    touchFrets = if (value == TouchStrip.NOT_TOUCHED) emptySet() else TouchStrip.decode(value).frets,
+                )
                 Codes.ABS_HAT1X -> state.copy(whammy = whammyRange.normalize(value))
                 else -> return
             }
@@ -187,7 +236,6 @@ class GuitarBridge(private val mapping: BridgeMapping = BridgeMapping()) {
                 Codes.ABS_X -> state.copy(stickX = value / 32767f)
                 Codes.ABS_Y -> state.copy(stickY = value / 32767f)
                 Codes.ABS_HAT0X -> state.copy(touchStrip = value.toFloat().takeIf { value != 0 })
-                Codes.ABS_HAT0Y -> state.copy(strumUp = value < 0, strumDown = value > 0)
                 else -> return
             }
         }
@@ -217,24 +265,4 @@ class GuitarBridge(private val mapping: BridgeMapping = BridgeMapping()) {
     /** hid-wiimote reports the raw 5-bit strip value; 0x0F means "not touched". */
     private fun kernelTouchStrip(value: Int): Float? =
         if (value == 0x0F) null else ((value - 0x04).coerceIn(0, 0x1B) / 0x1B.toFloat()) * 2 - 1
-
-    companion object {
-        /** hid-wiimote guitar fret keys. */
-        val KERNEL_FRETS = mapOf(
-            Codes.BTN_1 to Fret.GREEN,
-            Codes.BTN_2 to Fret.RED,
-            Codes.BTN_3 to Fret.YELLOW,
-            Codes.BTN_4 to Fret.BLUE,
-            Codes.BTN_5 to Fret.ORANGE,
-        )
-
-        /** The Odin's re-published guitar, as measured with the guided test. */
-        val ODIN_FRETS = mapOf(
-            Codes.BTN_EAST to Fret.GREEN,
-            Codes.BTN_C to Fret.RED,
-            Codes.BTN_NORTH to Fret.YELLOW,
-            Codes.BTN_WEST to Fret.BLUE,
-            Codes.BTN_Z to Fret.ORANGE,
-        )
-    }
 }

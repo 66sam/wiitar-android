@@ -5,21 +5,31 @@ interface IBridgeService {
     // Transaction code reserved by Shizuku for tearing the service down.
     void destroy() = 16777114;
 
-    // Starts the bridge if it isn't running. tiltAxis: 0 = X, 1 = Y, 2 = Z (used without a
-    // calibration). tiltCalibration: TiltCalibration.encode() or empty. buttonLayout:
-    // ButtonLayout.encode() or empty for the defaults. hideGuitar: take exclusive access (EVIOCGRAB)
-    // to the guitar's own input device so games only see the virtual gamepad. Returns status().
-    String start(int tiltAxis, boolean tiltInvert, String tiltCalibration, String buttonLayout, boolean hideGuitar) = 1;
+    // Starts bridging every connected guitar (and any that connect later).
+    // config: BridgeConfig.encode(). Returns status().
+    String start(String config) = 1;
 
-    // Human-readable status: sources, virtual device, live values, errors.
-    String status() = 2;
+    // Applies a new BridgeConfig to running guitars immediately.
+    void configure(String config) = 2;
 
-    // Current smoothed gravity vector as Vec3.encode(), or empty before the first sample.
-    String gravity() = 3;
+    // Human-readable status: guitars, sources, latency, errors.
+    String status() = 3;
 
-    // Applies a new tilt calibration (TiltCalibration.encode(), or empty to clear) immediately.
-    void setTiltCalibration(String tiltCalibration) = 4;
+    // LiveState.SIZE ints per bridged guitar, in slot order.
+    int[] liveState() = 4;
 
-    // Applies a new button layout (ButtonLayout.encode()) immediately.
-    void setButtonLayout(String buttonLayout) = 5;
+    // Smoothed gravity vector of the guitar in [slot] (Vec3.encode()), or empty.
+    String gravity(int slot) = 5;
+
+    // Records the next control press on any guitar; poll captureResult().
+    void beginCapture() = 6;
+
+    // "" while waiting, else "<GuitarSource name>|<PhysicalInput.encode()>|<slot>".
+    String captureResult() = 7;
+
+    // Rumbles the Wii Remote in [slot] for [millis] ms (to see which guitar is which player).
+    void rumble(int slot, int millis) = 8;
+
+    // Bridge latency in microseconds: [samples, average, 95th percentile, max].
+    long[] latency() = 9;
 }

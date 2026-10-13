@@ -59,8 +59,13 @@ data class KernelInputDevice(
     }
 }
 
-/** A Linux struct input_event. */
-data class EvdevEvent(val type: Int, val code: Int, val value: Int) {
+/**
+ * A Linux struct input_event.
+ *
+ * @property timeMicros the kernel timestamp (CLOCK_REALTIME unless the reader
+ *   changed the clock), in microseconds; 0 when built by hand.
+ */
+data class EvdevEvent(val type: Int, val code: Int, val value: Int, val timeMicros: Long = 0) {
     companion object {
         const val EV_SYN = 0x00
         const val EV_KEY = 0x01
@@ -76,15 +81,25 @@ data class EvdevEvent(val type: Int, val code: Int, val value: Int) {
         /** Decodes one event from [buffer] at [offset]; [size] is [SIZE_64] or [SIZE_32]. */
         fun decode(buffer: ByteArray, offset: Int, size: Int = SIZE_64): EvdevEvent {
             val b = ByteBuffer.wrap(buffer, offset, size).order(ByteOrder.LITTLE_ENDIAN)
-            b.position(offset + size - 8)
+            val sec: Long
+            val usec: Long
+            if (size == SIZE_64) {
+                sec = b.long
+                usec = b.long
+            } else {
+                sec = b.int.toLong()
+                usec = b.int.toLong()
+            }
             val type = b.short.toInt() and 0xFFFF
             val code = b.short.toInt() and 0xFFFF
-            return EvdevEvent(type, code, b.int)
+            return EvdevEvent(type, code, b.int, sec * 1_000_000 + usec)
         }
 
         fun encode(event: EvdevEvent, size: Int = SIZE_64): ByteArray {
             val b = ByteBuffer.allocate(size).order(ByteOrder.LITTLE_ENDIAN)
-            b.position(size - 8)
+            val sec = event.timeMicros / 1_000_000
+            val usec = event.timeMicros % 1_000_000
+            if (size == SIZE_64) b.putLong(sec).putLong(usec) else b.putInt(sec.toInt()).putInt(usec.toInt())
             b.putShort(event.type.toShort()).putShort(event.code.toShort()).putInt(event.value)
             return b.array()
         }

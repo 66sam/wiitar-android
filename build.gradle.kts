@@ -13,6 +13,7 @@ buildscript {
             rootDir.resolve("local.properties").exists()
         ) {
             classpath("com.android.tools.build:gradle:8.7.3")
+            classpath("org.jetbrains.kotlin:compose-compiler-gradle-plugin:2.0.21")
         }
     }
 }

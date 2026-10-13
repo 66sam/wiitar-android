@@ -193,6 +193,16 @@ class ProbeActivity : Activity() {
             "Odin-related settings" to "for ns in global system secure; do " +
                 "settings list \$ns | grep -iE 'ayn|odin|gamepad|controller|joystick|keymap|mapping' | sed \"s/^/\$ns: /\"; done",
             "Android input service" to "dumpsys input | grep -iE -A4 'Nintendo|Wiitar|Excluded|2020' | head -120",
+            // Whammy on the Odin: how does com.odin.mapping decide which devices to hide and republish?
+            "Odin mapping app" to "p=\$(pm path com.odin.mapping | head -1 | cut -d: -f2); echo \$p; " +
+                "dumpsys package com.odin.mapping | grep -iE 'versionName|Provider|Receiver|Service|permission' | head -40",
+            "Odin mapping strings" to "p=\$(pm path com.odin.mapping | head -1 | cut -d: -f2); " +
+                "for d in \$(unzip -l \$p | grep -oE 'classes[0-9]*\\.dex'); do unzip -p \$p \$d | strings; done | " +
+                "grep -iE 'exclude|blacklist|whitelist|ignore|grab|wiimote|nintendo|057e|guitar|persist\\.|/dev/input|unlink|hidraw|uinput|settings' | " +
+                "sort -u | head -200",
+            "Odin system properties" to "getprop | grep -iE 'odin|ayn|mapping|gamepad' | head -60",
+            "Wii Remote LEDs" to "for f in /sys/class/leds/*057E*/brightness; do " +
+                "if [ -w \$f ]; then echo \"\$f writable\"; else echo \"\$f NOT writable\"; fi; done",
         )
     }
 }

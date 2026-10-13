@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
@@ -49,6 +50,7 @@ android {
 
     buildFeatures {
         aidl = true
+        compose = true
     }
 
     compileOptions {
@@ -66,4 +68,9 @@ dependencies {
     // Shizuku: ADB-shell privileges without root, for reading evdev and creating a uhid gamepad.
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
+
+    implementation(platform("androidx.compose:compose-bom:2024.10.01"))
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.activity:activity-compose:1.9.3")
 }
