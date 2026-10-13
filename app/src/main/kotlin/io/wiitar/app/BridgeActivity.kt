@@ -13,12 +13,19 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.CheckBox
+import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
+import android.widget.Spinner
 import android.widget.TextView
+import io.wiitar.bridge.BridgeMapping
+import io.wiitar.bridge.ButtonLayout
 import io.wiitar.bridge.TiltCalibration
 import io.wiitar.bridge.Vec3
+import io.wiitar.bridge.VirtualGamepad
 import rikka.shizuku.Shizuku
 
 /**
@@ -31,6 +38,12 @@ class BridgeActivity : Activity() {
     private lateinit var tiltInvert: CheckBox
     private lateinit var calibrationView: TextView
     private var capturedRest: Vec3? = null
+    private lateinit var layoutWarning: TextView
+    private val layoutSpinners = HashMap<ButtonLayout.Input, Spinner>()
+
+    /** Spinner choices: every gamepad button, plus "none" for the tilt button. */
+    private fun choices(input: ButtonLayout.Input): List<String> =
+        VirtualGamepad.Button.entries.map { it.name } + if (input == ButtonLayout.Input.TILT) listOf(ButtonLayout.NONE) else emptyList()
     private val handler = Handler(Looper.getMainLooper())
 
     @Volatile
@@ -56,7 +69,8 @@ class BridgeActivity : Activity() {
                 val axis = tiltAxisGroup.checkedRadioButtonId
                 val invert = tiltInvert.isChecked
                 val calibration = savedCalibration()
-                background { s.start(axis, invert, calibration) }
+                val layout = savedLayout()
+                background { s.start(axis, invert, calibration, layout) }
             }
         }
 
@@ -101,6 +115,15 @@ class BridgeActivity : Activity() {
                 "tilt right stick Y (RZ), and right-stick click when tilted past about 60% · whammy right stick X (Z), " +
                 "when the guitar exposes it. If Clone Hero lists it as player 2, bind it there.",
         )
+        column.heading("Buttons")
+        column.paragraph(
+            "What each guitar control presses on \"Wiitar Guitar\". Changes apply immediately; rebind in the game afterwards. " +
+                "Avoid B (Android turns an unhandled B into Back).",
+        )
+        layoutWarning = column.paragraph()
+        for (input in ButtonLayout.Input.entries) addLayoutRow(column, input)
+        column.button("Reset buttons to default") { applyLayout(BridgeMapping(), rebuild = true) }
+
         column.heading("Tilt calibration")
         column.paragraph(
             "With the bridge running: hold the guitar the way you play and tap 1, then raise the neck " +
@@ -159,7 +182,8 @@ class BridgeActivity : Activity() {
             val axis = tiltAxisGroup.checkedRadioButtonId
             val invert = tiltInvert.isChecked
             val calibration = savedCalibration()
-            background { s.start(axis, invert, calibration) }
+            val layout = savedLayout()
+            background { s.start(axis, invert, calibration, layout) }
             return
         }
         startWhenConnected = true
@@ -167,6 +191,56 @@ class BridgeActivity : Activity() {
             !Shizuku.pingBinder() || Shizuku.isPreV11() -> statusView.text = shizukuState()
             Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED -> Shizuku.requestPermission(REQUEST_SHIZUKU)
             else -> bind()
+        }
+    }
+
+    private fun savedLayout(): String =
+        getSharedPreferences("bridge", MODE_PRIVATE).getString("buttonLayout", "").orEmpty()
+
+    private fun addLayoutRow(column: LinearLayout, input: ButtonLayout.Input) {
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        row.addView(TextView(this).apply { text = input.label }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        val options = choices(input)
+        val spinner = Spinner(this)
+        spinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, options)
+        row.addView(spinner, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        column.addView(row)
+        layoutSpinners[input] = spinner
+        val current = ButtonLayout.get(ButtonLayout.decode(savedLayout()), input)?.name ?: ButtonLayout.NONE
+        spinner.setSelection(options.indexOf(current).coerceAtLeast(0), false)
+        spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
+                val button = VirtualGamepad.Button.entries.firstOrNull { it.name == options[position] }
+                val mapping = ButtonLayout.decode(savedLayout())
+                if (ButtonLayout.get(mapping, input) != button) applyLayout(ButtonLayout.set(mapping, input, button), rebuild = false)
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+        }
+        renderLayoutWarning()
+    }
+
+    private fun applyLayout(mapping: BridgeMapping, rebuild: Boolean) {
+        val encoded = ButtonLayout.encode(mapping)
+        getSharedPreferences("bridge", MODE_PRIVATE).edit().putString("buttonLayout", encoded).apply()
+        DiagnosticLog.add("[bridge] buttons: $encoded")
+        if (rebuild) {
+            for ((input, spinner) in layoutSpinners) {
+                val options = choices(input)
+                spinner.setSelection(options.indexOf(ButtonLayout.get(mapping, input)?.name ?: ButtonLayout.NONE).coerceAtLeast(0), false)
+            }
+        }
+        renderLayoutWarning()
+        service?.let { s -> background { s.setButtonLayout(encoded) } }
+    }
+
+    private fun renderLayoutWarning() {
+        val mapping = ButtonLayout.decode(savedLayout())
+        val dupes = ButtonLayout.duplicates(mapping)
+        val usesB = ButtonLayout.Input.entries.any { ButtonLayout.get(mapping, it) == VirtualGamepad.Button.B }
+        layoutWarning.text = buildString {
+            if (dupes.isNotEmpty()) append("⚠ Used twice: ${dupes.joinToString()}. ")
+            if (usesB) append("⚠ B may act as Back in games.")
         }
     }
 
@@ -260,7 +334,7 @@ class BridgeActivity : Activity() {
 
     private companion object {
         const val REQUEST_SHIZUKU = 43
-        const val SERVICE_VERSION = 4 // bump whenever BridgeService changes so Shizuku restarts the running daemon
+        const val SERVICE_VERSION = 5 // bump whenever BridgeService changes so Shizuku restarts the running daemon
         const val REFRESH_MS = 300L
     }
 }

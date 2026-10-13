@@ -7,6 +7,7 @@ package io.wiitar.app
 
 import android.content.Context
 import io.wiitar.bridge.BridgeMapping
+import io.wiitar.bridge.ButtonLayout
 import io.wiitar.bridge.EvdevEvent
 import io.wiitar.bridge.GuitarBridge
 import io.wiitar.bridge.GuitarSource
@@ -55,12 +56,15 @@ class BridgeService() : IBridgeService.Stub() {
 
     private var mapping = BridgeMapping()
 
-    override fun start(tiltAxis: Int, tiltInvert: Boolean, tiltCalibration: String?): String {
+    override fun start(tiltAxis: Int, tiltInvert: Boolean, tiltCalibration: String?, buttonLayout: String?): String {
         synchronized(lock) {
             if (bridge != null) return status()
-            mapping = BridgeMapping(
-                tilt = TiltConfig(axis = Axis.entries[tiltAxis.coerceIn(0, 2)], invert = tiltInvert),
-                tiltCalibration = TiltCalibration.decode(tiltCalibration),
+            mapping = ButtonLayout.decode(
+                buttonLayout,
+                BridgeMapping(
+                    tilt = TiltConfig(axis = Axis.entries[tiltAxis.coerceIn(0, 2)], invert = tiltInvert),
+                    tiltCalibration = TiltCalibration.decode(tiltCalibration),
+                ),
             )
             try {
                 startLocked()
@@ -153,9 +157,14 @@ class BridgeService() : IBridgeService.Stub() {
 
     override fun gravity(): String = synchronized(lock) { bridge?.gravity?.encode().orEmpty() }
 
-    override fun setTiltCalibration(tiltCalibration: String?) {
+    override fun setTiltCalibration(tiltCalibration: String?) =
+        remap { it.copy(tiltCalibration = TiltCalibration.decode(tiltCalibration)) }
+
+    override fun setButtonLayout(buttonLayout: String?) = remap { ButtonLayout.decode(buttonLayout, it) }
+
+    private fun remap(change: (BridgeMapping) -> BridgeMapping) {
         synchronized(lock) {
-            mapping = mapping.copy(tiltCalibration = TiltCalibration.decode(tiltCalibration))
+            mapping = change(mapping)
             // Analog state is rebuilt from the next events; held buttons re-sync on their next change.
             if (bridge != null) bridge = GuitarBridge(mapping)
         }
@@ -166,6 +175,7 @@ class BridgeService() : IBridgeService.Stub() {
             val b = bridge
             appendLine(if (b != null) "Bridge running: virtual gamepad \"$VIRTUAL_NAME\"" else "Bridge not running")
             sources.forEach { appendLine("  source $it") }
+            appendLine("  buttons: ${ButtonLayout.encode(mapping)}")
             appendLine("  events in: $eventsIn, reports out: $reportsOut")
             if (b != null) {
                 val s = b.state

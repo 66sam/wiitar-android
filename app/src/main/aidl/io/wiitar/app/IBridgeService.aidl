@@ -6,8 +6,9 @@ interface IBridgeService {
     void destroy() = 16777114;
 
     // Starts the bridge if it isn't running. tiltAxis: 0 = X, 1 = Y, 2 = Z (used without a
-    // calibration). tiltCalibration: TiltCalibration.encode() or empty. Returns status().
-    String start(int tiltAxis, boolean tiltInvert, String tiltCalibration) = 1;
+    // calibration). tiltCalibration: TiltCalibration.encode() or empty. buttonLayout:
+    // ButtonLayout.encode() or empty for the defaults. Returns status().
+    String start(int tiltAxis, boolean tiltInvert, String tiltCalibration, String buttonLayout) = 1;
 
     // Human-readable status: sources, virtual device, live values, errors.
     String status() = 2;
@@ -17,4 +18,7 @@ interface IBridgeService {
 
     // Applies a new tilt calibration (TiltCalibration.encode(), or empty to clear) immediately.
     void setTiltCalibration(String tiltCalibration) = 4;
+
+    // Applies a new button layout (ButtonLayout.encode()) immediately.
+    void setButtonLayout(String buttonLayout) = 5;
 }

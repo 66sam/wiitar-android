@@ -242,4 +242,27 @@ class BridgeTest {
             assertTrue(bridge.state.minus, "$source")
         }
     }
+
+    @Test
+    fun `button layout round trips and applies`() {
+        val default = BridgeMapping()
+        assertEquals(
+            "GREEN=A,RED=X,YELLOW=Y,BLUE=L1,ORANGE=R1,PLUS=START,MINUS=SELECT,TILT=THUMB_R",
+            ButtonLayout.encode(default),
+        )
+        val custom = ButtonLayout.decode("RED=L2,TILT=NONE,BOGUS=A,GREEN=nope")
+        assertEquals(VirtualGamepad.Button.L2, custom.frets[Fret.RED])
+        assertEquals(VirtualGamepad.Button.A, custom.frets[Fret.GREEN]) // malformed entry ignored
+        assertNull(custom.tiltButton)
+        assertEquals(custom, ButtonLayout.decode(ButtonLayout.encode(custom)))
+        assertEquals(setOf(VirtualGamepad.Button.A), ButtonLayout.duplicates(ButtonLayout.decode("RED=A")))
+        assertTrue(ButtonLayout.duplicates(default).isEmpty())
+    }
+
+    @Test
+    fun `remapped red fret drives the chosen button`() {
+        val bridge = GuitarBridge(ButtonLayout.decode("RED=L2"))
+        val r = assertNotNull(bridge.feed(GuitarSource.ODIN_GUITAR, EvdevEvent.EV_KEY, Codes.BTN_C, 1))
+        assertEquals(1 shl (VirtualGamepad.Button.L2.hidIndex - 1), ByteBuffer.wrap(r).order(ByteOrder.LITTLE_ENDIAN).getShort(0).toInt())
+    }
 }
