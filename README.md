@@ -167,7 +167,25 @@ guitars without a strip are unaffected.
 
 | Guitar | Device / Android | Path | Result |
 |---|---|---|---|
-| Guitar Hero guitar (model TBC) | AYN Odin 3 Max, Android 15, kernel 6.6 (GKI) | non-root, kernel `hid-wiimote` | Pairs with the app's PIN (1+2 method). The kernel creates "Nintendo Wii Remote" and "Nintendo Wii Remote Guitar" input devices. Stick, strum, plus/minus and some frets confirmed; full per-control mapping, whammy and tilt are still being tested. The Odin reports the guitar as vendor 2020 / product 0111, so its controller layer may be re-presenting it. |
+| Guitar Hero guitar (World Tour-style, with touch strip) | AYN Odin 3 Max, Android 15, kernel 6.6 (GKI) | non-root, kernel `hid-wiimote` | Frets, strum, plus, touch strip and stick work. **Whammy and tilt don't reach Android.** See the mapping below. |
+
+### Odin 3 Max mapping (non-root path)
+
+From the in-app guided test. The kernel creates two devices: "Nintendo Wii
+Remote" (057e:0306) and "Nintendo Wii Remote Guitar". Android reports the
+guitar as 2020:0111, an AYN ID, and gives it the same axis set as the Odin's
+built-in "Xbox" pad, so the Odin's controller layer probably re-presents it.
+
+| Guitar control | Android event |
+|---|---|
+| Green / Red / Yellow / Blue / Orange | `BUTTON_B` / `BUTTON_C` / `BUTTON_X` / `BUTTON_Y` / `BUTTON_Z` |
+| Strum up / down | `AXIS_HAT_Y` −1 / +1 |
+| Plus | `BUTTON_START` |
+| Minus | `BUTTON_START` in the guided test, `BUTTON_SELECT` in an earlier free test (to recheck) |
+| Touch strip | `AXIS_HAT_X` −1..+1 |
+| Stick | `AXIS_X`, `AXIS_Y` |
+| Whammy | nothing |
+| Tilt | nothing (no accelerometer device is exposed) |
 
 ## Adding support for a new guitar / extension ID
 
