@@ -134,7 +134,7 @@ class InputDiagnosticsActivity : Activity(), InputManager.InputDeviceListener {
     }
 
     private fun deviceListing(): String = buildString {
-        val devices = inputManager.inputDeviceIds.mapNotNull { InputDevice.getDevice(it) }
+        val devices = inputManager.inputDeviceIds.toList().mapNotNull { InputDevice.getDevice(it) }
         // External devices (the Wiimote's) first; built-in ones after.
         for (d in devices.sortedByDescending { it.isExternal }) {
             appendLine(summary(d))
