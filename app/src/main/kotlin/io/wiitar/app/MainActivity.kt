@@ -42,7 +42,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.decorView.setBackgroundColor(android.graphics.Color.rgb(0x12, 0x10, 0x0E))
-        setContent { WiitarApp() }
+        setContent { WiitarRoot() }
     }
 
     /**
@@ -72,7 +72,7 @@ object AppLatency {
 }
 
 @Composable
-fun WiitarApp() {
+fun WiitarRoot() {
     var screen by rememberSaveable { mutableStateOf(Screen.HOME) }
     BackHandler(enabled = screen != Screen.HOME) {
         screen = if (screen == Screen.ADVANCED) Screen.HOME else Screen.ADVANCED
