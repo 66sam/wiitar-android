@@ -24,6 +24,7 @@ class MainActivity : Activity() {
         column.button("Pair a Wii Remote") { startActivity(Intent(this, PairingActivity::class.java)) }
         column.button("Guided guitar test") { startActivity(Intent(this, GuidedTestActivity::class.java)) }
         column.button("Input diagnostics") { startActivity(Intent(this, InputDiagnosticsActivity::class.java)) }
+        column.button("Whammy & tilt probe (Shizuku)") { startActivity(Intent(this, ProbeActivity::class.java)) }
         column.monospace(
             "\nv${packageManager.getPackageInfo(packageName, 0).versionName} · " +
                 "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) · " +

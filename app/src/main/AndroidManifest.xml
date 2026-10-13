@@ -43,6 +43,19 @@
             android:exported="false" />
 
         <activity
+            android:name=".ProbeActivity"
+            android:label="Whammy &amp; tilt probe (Shizuku)"
+            android:exported="false" />
+
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:enabled="true"
+            android:exported="true"
+            android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
+        <activity
             android:name=".InputDiagnosticsActivity"
             android:label="Input diagnostics"
             android:exported="false" />
