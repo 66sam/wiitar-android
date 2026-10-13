@@ -22,6 +22,9 @@ class MainActivity : Activity() {
                 "Then tap \"Copy results\" and send the text back. Input diagnostics shows everything live.",
         )
         column.button("Pair a Wii Remote") { startActivity(Intent(this, PairingActivity::class.java)) }
+        column.button("Guitar bridge (Shizuku): whammy, tilt, standard buttons") {
+            startActivity(Intent(this, BridgeActivity::class.java))
+        }
         column.button("Guided guitar test") { startActivity(Intent(this, GuidedTestActivity::class.java)) }
         column.button("Input diagnostics") { startActivity(Intent(this, InputDiagnosticsActivity::class.java)) }
         column.button("Whammy & tilt probe (Shizuku)") { startActivity(Intent(this, ProbeActivity::class.java)) }

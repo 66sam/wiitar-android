@@ -185,6 +185,14 @@ class ProbeActivity : Activity() {
             "kernel input devices" to "cat /proc/bus/input/devices",
             "evdev capabilities" to "getevent -lp",
             "HID devices and drivers" to "for d in /sys/bus/hid/devices/*; do echo \"\$d -> \$(readlink \$d/driver)\"; done",
+            "evdev nodes by name" to "for e in /sys/class/input/event*; do " +
+                "echo \"\${e##*/} dev=\$(cat \$e/dev) name=\$(cat \$e/device/name) node=\$(ls -l /dev/input/\${e##*/} 2>&1)\"; done",
+            "char devices 13:x outside /dev/input" to "ls -lR /dev 2>/dev/null | grep -E '^c.* 13, ' | grep -v ' event[0-9]' | head -20",
+            "AYN / Odin packages" to "pm list packages | grep -iE 'ayn|odin|gamepad|controller|keymap|input'",
+            "AYN / Odin processes" to "ps -A -o PID,USER,NAME | grep -iE 'ayn|odin|gamepad|controller|keymap|input'",
+            "Odin-related settings" to "for ns in global system secure; do " +
+                "settings list \$ns | grep -iE 'ayn|odin|gamepad|controller|joystick|keymap|mapping' | sed \"s/^/\$ns: /\"; done",
+            "Android input service" to "dumpsys input | grep -iE -A4 'Nintendo|Wiitar|Excluded|2020' | head -120",
         )
     }
 }

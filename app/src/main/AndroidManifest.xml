@@ -43,6 +43,11 @@
             android:exported="false" />
 
         <activity
+            android:name=".BridgeActivity"
+            android:label="Guitar bridge"
+            android:exported="false" />
+
+        <activity
             android:name=".ProbeActivity"
             android:label="Whammy &amp; tilt probe (Shizuku)"
             android:exported="false" />
