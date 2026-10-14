@@ -5,6 +5,10 @@
  */
 package io.wiitar.app
 
+import android.annotation.SuppressLint
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.os.ParcelFileDescriptor
 import io.wiitar.bridge.BridgeConfig
@@ -23,8 +27,12 @@ import io.wiitar.bridge.Uhid
 import io.wiitar.bridge.VirtualGamepad
 import io.wiitar.protocol.OutputReports
 import io.wiitar.protocol.TouchStrip
+import io.wiitar.protocol.WiimotePairing
 import java.io.File
 import java.io.RandomAccessFile
+import java.lang.reflect.InvocationTargetException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.system.exitProcess
 
 /**
@@ -44,7 +52,10 @@ class BridgeService() : IBridgeService.Stub() {
     /** Shizuku prefers this constructor; the context tells us where the native library was extracted. */
     constructor(context: Context) : this() {
         nativeLibraryDir = context.applicationInfo?.nativeLibraryDir
+        this.context = context
     }
+
+    private var context: Context? = null
 
     private var nativeLibraryDir: String? = null
     private val lock = Any()
@@ -308,6 +319,71 @@ class BridgeService() : IBridgeService.Stub() {
 
     override fun latency(): LongArray = synchronized(lock) { latency.summary() }
 
+    override fun hostAddress(): String = try {
+        val process = ProcessBuilder("settings", "get", "secure", "bluetooth_address").redirectErrorStream(true).start()
+        val out = process.inputStream.bufferedReader().readText().trim()
+        process.waitFor()
+        out.takeIf { WiimotePairing.isValidAddress(it) }?.let { WiimotePairing.normalizeAddress(it) }.orEmpty()
+    } catch (e: Exception) {
+        problem("couldn't read this device's Bluetooth address: $e")
+        ""
+    }
+
+    /**
+     * Uses the hidden BluetoothHidHost.connect() with the shell user's Bluetooth
+     * permissions. Calls are attributed to com.android.shell, the package the shell
+     * uid actually owns, so Bluetooth's caller checks accept them.
+     */
+    @SuppressLint("MissingPermission")
+    override fun connectWiimotes(): String {
+        val base = context ?: return "No context in the bridge service."
+        val shell = try {
+            base.createPackageContext("com.android.shell", 0)
+        } catch (e: Exception) {
+            base
+        }
+        val adapter = shell.getSystemService(BluetoothManager::class.java)?.adapter ?: return "No Bluetooth adapter."
+        val wiimotes = try {
+            adapter.bondedDevices.filter { WiimotePairing.isWiimoteName(it.name) }
+        } catch (e: Exception) {
+            return "Can't list paired devices: $e"
+        }
+        if (wiimotes.isEmpty()) return "No paired Wii Remotes."
+        val ready = CountDownLatch(1)
+        var proxy: BluetoothProfile? = null
+        val listener = object : BluetoothProfile.ServiceListener {
+            override fun onServiceConnected(profile: Int, p: BluetoothProfile) {
+                proxy = p
+                ready.countDown()
+            }
+
+            override fun onServiceDisconnected(profile: Int) = Unit
+        }
+        if (!adapter.getProfileProxy(shell, listener, PROFILE_HID_HOST)) return "HID profile unavailable."
+        if (!ready.await(3, TimeUnit.SECONDS)) return "HID profile didn't respond."
+        val hid = proxy ?: return "HID profile unavailable."
+        return try {
+            val connect = hid.javaClass.getMethod("connect", BluetoothDevice::class.java)
+            wiimotes.joinToString("\n") { device ->
+                val state = hid.getConnectionState(device)
+                if (state == BluetoothProfile.STATE_CONNECTED) {
+                    "${device.address}: already connected"
+                } else {
+                    try {
+                        val ok = connect.invoke(hid, device) as? Boolean ?: false
+                        "${device.address}: ${if (ok) "connecting…" else "Android refused"}"
+                    } catch (e: InvocationTargetException) {
+                        "${device.address}: ${e.targetException}"
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            "Couldn't connect: $e"
+        } finally {
+            adapter.closeProfileProxy(PROFILE_HID_HOST, hid)
+        }
+    }
+
     override fun guitars(): Array<String> = synchronized(lock) {
         sessions.values.sortedBy { it.slot }.map { "${it.slot}\t${it.id}\t${it.battery}" }.toTypedArray()
     }
@@ -367,6 +443,7 @@ class BridgeService() : IBridgeService.Stub() {
 
     private companion object {
         const val VIRTUAL_NAME = "Wiitar Guitar"
+        const val PROFILE_HID_HOST = 4 // BluetoothProfile.HID_HOST, hidden from the public SDK
         const val MAX_GUITARS = 8
         const val DISCOVERY_INTERVAL_MS = 1500L
         const val BATTERY_REFRESH_ROUNDS = 20 // about every 30 s

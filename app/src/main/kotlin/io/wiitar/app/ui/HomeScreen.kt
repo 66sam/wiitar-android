@@ -6,6 +6,13 @@
 package io.wiitar.app.ui
 
 import android.content.Intent
+import android.provider.Settings
+import androidx.compose.foundation.clickable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import io.wiitar.app.DiagnosticLog
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -33,6 +40,7 @@ import io.wiitar.bridge.LiveState
 @Composable
 fun HomeScreen(state: BridgeUiState, onAdvanced: () -> Unit) {
     val context = LocalContext.current
+    var connectNote by remember { mutableStateOf("") }
     Column(
         Modifier
             .fillMaxSize()
@@ -79,10 +87,34 @@ fun HomeScreen(state: BridgeUiState, onAdvanced: () -> Unit) {
                     detail = when {
                         guitarReady -> "Wii Remote and guitar connected"
                         state.wiimotes > 0 -> "Wii Remote connected. Plug the guitar into it."
-                        else -> "Pair once, then press 1 + 2 on the Wii Remote to connect."
+                        connectNote.isNotEmpty() -> connectNote
+                        else -> "Press any button on the Wii Remote (if paired with SYNC), " +
+                            "or hold 1 + 2 and tap Connect."
                     },
-                    action = "Pair",
-                    onAction = { context.startActivity(Intent(context, PairingActivity::class.java)) },
+                    action = if (state.wiimotes == 0) "Connect" else null,
+                    onAction = {
+                        val service = BridgeClient.service
+                        if (service == null) {
+                            // Without the Shizuku service, Android's own Bluetooth screen is the way to connect.
+                            context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+                        } else {
+                            connectNote = "Connecting… keep the Wii Remote's lights blinking."
+                            BridgeClient.call {
+                                val report = service.connectWiimotes()
+                                connectNote = if (report.contains("connecting") || report.contains("already")) {
+                                    "Connecting…"
+                                } else {
+                                    "Couldn't connect automatically ($report). Tap the Wii Remote in Bluetooth settings."
+                                }
+                                DiagnosticLog.add("[connect] $report")
+                            }
+                        }
+                    },
+                )
+                Text(
+                    "Pair a new Wii Remote",
+                    Type.dim.copy(color = Palette.amber),
+                    Modifier.clickable { context.startActivity(Intent(context, PairingActivity::class.java)) },
                 )
                 StepRow(
                     done = state.running,

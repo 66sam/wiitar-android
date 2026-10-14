@@ -36,4 +36,11 @@ interface IBridgeService {
 
     // One "slot<TAB>guitar id<TAB>battery %" line per bridged guitar, in slot order.
     String[] guitars() = 10;
+
+    // This device's own Bluetooth address (apps can't read it; the shell user can), or empty.
+    String hostAddress() = 11;
+
+    // Asks Android's HID host to connect every paired Wii Remote that isn't connected
+    // (for remotes paired with 1+2, which never connect by themselves). Returns a report.
+    String connectWiimotes() = 12;
 }

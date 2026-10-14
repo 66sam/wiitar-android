@@ -82,22 +82,22 @@ class PairingActivity : Activity() {
         val column = scrollingColumn()
         column.heading("1. Choose how you'll put the Wii Remote in pairing mode")
         val group = RadioGroup(this)
-        val method12 = RadioButton(this).apply {
-            id = 1
-            text = "Hold the 1 and 2 buttons (simplest; press 1+2 again each time you connect)"
-        }
         methodSync = RadioButton(this).apply {
             id = 2
-            text = "Press the red SYNC button (remembers this device and reconnects on any button press)"
+            text = "Press the red SYNC button (recommended: afterwards any button press reconnects it)"
         }
-        group.addView(method12)
+        val method12 = RadioButton(this).apply {
+            id = 1
+            text = "Hold the 1 and 2 buttons (it won't reconnect by itself; you'll need to connect it each time)"
+        }
         group.addView(methodSync)
+        group.addView(method12)
         column.addView(group)
-        group.check(if (prefs.getBoolean("sync", false)) 2 else 1)
+        group.check(if (prefs.getBoolean("sync", true)) 2 else 1)
 
         column.paragraph(
-            "SYNC pairing uses this device's Bluetooth address as the PIN, and Android doesn't let apps read it. " +
-                "Find it under Settings → About phone → Status (\"Bluetooth address\") and enter it here:",
+            "SYNC pairing uses this device's Bluetooth address as the PIN. Wiitar reads it through Shizuku; " +
+                "without Shizuku, copy it from Settings → About phone → Status (\"Bluetooth address\"):",
         )
         hostAddressField = EditText(this).apply {
             hint = "e.g. 12:34:56:78:9A:BC"
@@ -105,6 +105,7 @@ class PairingActivity : Activity() {
             setText(prefs.getString("hostAddress", ""))
         }
         column.addView(hostAddressField)
+        column.button("Fill in automatically (Shizuku)") { fillHostAddress(quiet = false) }
         group.setOnCheckedChangeListener { _, _ -> savePrefs() }
 
         column.heading("2. Scan")
@@ -121,7 +122,8 @@ class PairingActivity : Activity() {
         column.paragraph(
             "Pairing doesn't connect the controller by itself.\n" +
                 "• SYNC-paired: press any button on the Wii Remote; it connects to this device on its own.\n" +
-                "• 1+2-paired: hold 1+2 until the LEDs blink, then tap the Wii Remote in Android's Bluetooth settings.\n" +
+                "• 1+2-paired: hold 1+2 until the LEDs blink, then tap Connect on Wiitar's home screen " +
+                "(or tap the Wii Remote in Android's Bluetooth settings).\n" +
                 "The log shows \"HID input profile … connected\" when it worked.",
         )
         column.button("Open Bluetooth settings") { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
@@ -149,6 +151,7 @@ class PairingActivity : Activity() {
         DiagnosticLog.addListener(logListener)
         logListener()
         if (adapter == null) log("This device has no Bluetooth adapter.")
+        if (hostAddressField.text.isNullOrBlank()) fillHostAddress(quiet = true)
         if (!hasPermissions()) requestPermissions(requiredPermissions(), REQUEST_PERMISSIONS) else showBonded()
     }
 
@@ -265,6 +268,27 @@ class PairingActivity : Activity() {
             log("Pairing failed. Check the method above matches the button you pressed, then try again.")
         }
         renderDevices()
+    }
+
+    /** Asks the bridge (shell user, via Shizuku) for this device's Bluetooth address. */
+    private fun fillHostAddress(quiet: Boolean) {
+        val service = BridgeClient.service
+        if (service == null) {
+            if (!quiet) log("Shizuku isn't connected yet. Start the bridge on the home screen first, or type the address.")
+            return
+        }
+        BridgeClient.call {
+            val address = service.hostAddress()
+            runOnUiThread {
+                if (address.isEmpty()) {
+                    if (!quiet) log("Couldn't read this device's Bluetooth address; please type it.")
+                } else {
+                    hostAddressField.setText(address)
+                    savePrefs()
+                    log("This device's Bluetooth address: $address")
+                }
+            }
+        }
     }
 
     private fun method() =
