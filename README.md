@@ -8,7 +8,7 @@ and presents it to games as a standard controller, **"Wiitar Guitar 1"**
 (2, 3, … for more guitars). Every fret, strum, plus/minus and tilt for star
 power can be bound in the game's own controller settings.
 
-> **Status: 0.1, early.** Tested on an AYN Odin 3 Max (Android 15). Other
+> **Status: 0.1.1, early.** Tested on an AYN Odin 3 Max (Android 15). Other
 > devices with a recent Android kernel should work, but haven't been tried.
 > Reports are welcome. See [Reporting a problem](#reporting-a-problem).
 
