@@ -8,7 +8,7 @@ and presents it to games as a standard controller, **"Wiitar Guitar 1"**
 (2, 3, … for more guitars). Every fret, strum, plus/minus and tilt for star
 power can be bound in the game's own controller settings.
 
-> **Status: 0.1, early.** Tested on an AYN Odin 3 Max (Android 15). Other
+> **Status: 0.1.1, early.** Tested on an AYN Odin 3 Max (Android 15). Other
 > devices with a recent Android kernel should work, but haven't been tried.
 > Reports are welcome. See [Reporting a problem](#reporting-a-problem).
 
@@ -73,12 +73,14 @@ No fret uses B, because Android treats an unused B as "Back".
 
 ### AYN Odin note
 
-The Odin's built-in controller mapping app (`com.odin.mapping`) takes over
-Wii guitars and drops the whammy bar. Under *Advanced → Controls*, turn on
-**Let Wiitar handle Wii guitars**, then turn the Wii Remote off and on. This
-asks the Odin app to ignore Wii guitars only; your other controllers are
-unaffected, and turning the switch off undoes it. Until then, setting the
-touch strip to *whammy* is a workaround.
+The Odin's controller layer takes over Wii guitars: about 0.2 s after the
+guitar's input device appears, it deletes the device's node and republishes
+the guitar without the whammy bar, and with a touch strip that only reports
+left/centre/right. While the bridge runs, Wiitar watches `/dev/input` and opens
+the guitar the moment it appears, so the whammy bar and the full touch strip
+work. *Advanced → Latency & status* shows `KERNEL_GUITAR` when this worked. If
+it shows `ODIN_GUITAR`, turn the Wii Remote off and on again, or set the touch
+strip to *whammy* to use the strip instead.
 
 ## Multiplayer
 

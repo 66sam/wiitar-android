@@ -15,6 +15,7 @@ import android.hardware.input.InputManager
 import android.hardware.lights.LightState
 import android.hardware.lights.LightsRequest
 import android.os.Build
+import android.os.FileObserver
 import android.os.ParcelFileDescriptor
 import io.wiitar.bridge.BridgeConfig
 import io.wiitar.bridge.Codes
@@ -76,6 +77,16 @@ class BridgeService() : IBridgeService.Stub() {
     private var captureResult = ""
     private var discoveries = 0
 
+    /** A Wii guitar's kernel device, opened (and grabbed) the moment its node appeared. */
+    private class Preopened(val fd: ParcelFileDescriptor, val grabbed: Boolean)
+
+    /** By event handler ("event13"). Guarded by [lock]. See [watchInputDevices]. */
+    private val preopened = HashMap<String, Preopened>()
+
+    /** Kernel guitar devices another process holds exclusively, so the Odin's copy is used instead. */
+    private val contested = HashSet<String>()
+    private var inputWatcher: FileObserver? = null
+
     private fun configFor(id: String) = profiles[id] ?: config
 
     /** One bridged guitar. */
@@ -101,6 +112,9 @@ class BridgeService() : IBridgeService.Stub() {
         var touchSeen = false
         var events = 0L
 
+        /** Held open while bridged: closing a lights session hands the LEDs back to Android. Declared before init, which sets it. */
+        private var lightsSession: AutoCloseable? = null
+
         init {
             // BUS_USB so Android classes it as an external controller (BUS_VIRTUAL reads as built-in).
             uhid.write(
@@ -115,15 +129,18 @@ class BridgeService() : IBridgeService.Stub() {
                 val buffer = ByteArray(Uhid.EVENT_SIZE)
                 while (alive && uhid.read(buffer) > 0) Unit
             }
-            read(devices.guitar, devices.source, grab = config.hideGuitar)
+            try {
+                read(devices.guitar, devices.source, grab = config.hideGuitar)
+            } catch (e: Exception) {
+                close()
+                throw e
+            }
             devices.accelerometer?.let { read(it, GuitarSource.ACCELEROMETER, grab = false) }
             setPlayerLeds()
             readBattery()
         }
 
         /** Lights the Wii Remote's LEDs for this player (1-4 one LED, 5-8 pairs), if sysfs lets us. */
-        /** Held open while bridged: closing a lights session hands the LEDs back to Android. */
-        private var lightsSession: AutoCloseable? = null
 
         /**
          * Lights the Wii Remote's LEDs for this player (1-4 one LED, 5-8 pairs). Tries the
@@ -182,14 +199,22 @@ class BridgeService() : IBridgeService.Stub() {
 
         private fun read(device: KernelInputDevice, source: GuitarSource, grab: Boolean) {
             val path = node(device) ?: return
-            val fd = ParcelFileDescriptor.open(File(path), ParcelFileDescriptor.MODE_READ_ONLY)
+            // A device opened by the watcher may already have lost its node (the Odin deletes it).
+            val pre = synchronized(lock) { device.eventHandler?.let { preopened.remove(it) } }
+            val fd = pre?.fd ?: ParcelFileDescriptor.open(File(path), ParcelFileDescriptor.MODE_READ_ONLY)
             fds += fd
             if (Evdev.load(nativeLibraryDir) == null) {
                 monotonicClock = Evdev.useMonotonicClock(fd.fd) == 0
+                if (pre?.grabbed == true && !grab) Evdev.grab(fd.fd, false)
                 if (grab) {
-                    val result = Evdev.grab(fd.fd, true)
+                    val result = if (pre?.grabbed == true) 0 else Evdev.grab(fd.fd, true)
                     hidden = result == 0
                     if (hidden) grabbedFd = fd
+                    if (result == -EBUSY && source == GuitarSource.KERNEL_GUITAR) {
+                        // Another process (the Odin's mapping) holds it, so it would send us nothing.
+                        synchronized(lock) { device.eventHandler?.let { contested += it } }
+                        throw java.io.IOException("$path is held by another app; using its copy instead")
+                    }
                     if (!hidden) problem("Can't hide $path from games (EVIOCGRAB errno ${-result})")
                 }
             } else if (grab) {
@@ -241,6 +266,7 @@ class BridgeService() : IBridgeService.Stub() {
             this.profiles = Profiles.decode(profiles)
             if (!running) {
                 running = true
+                watchInputDevices()
                 thread("wiitar-discovery") {
                     while (true) {
                         try {
@@ -278,14 +304,66 @@ class BridgeService() : IBridgeService.Stub() {
         if (running) discover()
     }
 
+    /**
+     * Opens Wii guitars' kernel devices the moment their node appears. On the AYN Odin the
+     * controller mapping deletes the node about 0.2 s later and republishes the guitar without
+     * the whammy bar or the full touch strip; an fd opened before that keeps working, and
+     * grabbing it means the guitar's input comes to us rather than to that copy.
+     */
+    private fun watchInputDevices() {
+        if (inputWatcher != null) return
+        inputWatcher = object : FileObserver(File("/dev/input"), FileObserver.CREATE or FileObserver.ATTRIB) {
+            override fun onEvent(event: Int, path: String?) {
+                val handler = path?.takeIf { it.startsWith("event") } ?: return
+                try {
+                    if (preopen(handler)) discover()
+                } catch (e: Exception) {
+                    problem("watching $handler: $e")
+                }
+            }
+        }.also { it.startWatching() }
+    }
+
+    /** @return true if [handler] is a Wii guitar's kernel device and was opened just now. */
+    private fun preopen(handler: String): Boolean {
+        val device = File("/sys/class/input/$handler/device")
+        if (runCatching { device.resolve("name").readText().trim() }.getOrNull() != GuitarDiscovery.GUITAR_NAME) return false
+        if (runCatching { device.resolve("id/vendor").readText().trim().toInt(16) }.getOrNull() != GuitarDiscovery.NINTENDO) return false
+        // Handler names are reused, so identify the device by its sysfs path ("/devices/…/input/input128").
+        val sysfs = runCatching { device.canonicalPath.removePrefix("/sys") }.getOrNull() ?: return false
+        if (synchronized(lock) { !running || handler in preopened || inUse(sysfs) }) return false
+        val fd = ParcelFileDescriptor.open(File("/dev/input/$handler"), ParcelFileDescriptor.MODE_READ_ONLY)
+        val grabbed = config.hideGuitar && Evdev.load(nativeLibraryDir) == null && Evdev.grab(fd.fd, true) == 0
+        synchronized(lock) {
+            if (handler in preopened || inUse(sysfs)) {
+                runCatching { fd.close() }
+                return false
+            }
+            preopened[handler] = Preopened(fd, grabbed)
+        }
+        return true
+    }
+
+    /** Whether a live session reads the kernel input device at [sysfs]. */
+    private fun inUse(sysfs: String) = sessions.values.any { it.alive && it.devices.guitar.sysfs == sysfs }
+
     private fun discover() {
         val devices = KernelInputDevice.parseAll(File("/proc/bus/input/devices").readText())
         val found = GuitarDiscovery.find(devices) { node(it) != null }
         synchronized(lock) {
+            // Forget devices that went away; their handler names get reused.
+            val handlers = devices.mapNotNull { it.eventHandler }.toSet()
+            preopened.keys.filter { it !in handlers }.forEach { runCatching { preopened.remove(it)?.fd?.close() } }
+            contested.retainAll(handlers)
             val keys = found.map { it.key }.toSet()
-            // Drop guitars that disconnected or whose reader died.
+            // Drop guitars that disconnected or whose reader died, and ones whose guitar device was
+            // replaced (it dropped off the Wii Remote and came back) by a kernel device we can read.
+            val current = found.associateBy { it.key }
             sessions.entries.removeAll { (key, session) ->
-                (key !in keys || !session.alive).also { gone -> if (gone) session.close() }
+                val replaced = current[key]?.let {
+                    it.source == GuitarSource.KERNEL_GUITAR && it.guitar.sysfs != session.devices.guitar.sysfs
+                } == true
+                (key !in keys || !session.alive || replaced).also { gone -> if (gone) session.close() }
             }
             if (++discoveries % BATTERY_REFRESH_ROUNDS == 0) sessions.values.forEach { it.readBattery() }
             for (guitar in found) {
@@ -472,8 +550,17 @@ class BridgeService() : IBridgeService.Stub() {
         }
     }
 
-    private fun node(d: KernelInputDevice): String? =
-        d.eventHandler?.let { "/dev/input/$it" }?.takeIf { File(it).canRead() }
+    /** The device's node if we can read it: openable now, or already opened by the watcher. */
+    private fun node(d: KernelInputDevice): String? {
+        val handler = d.eventHandler ?: return null
+        val path = "/dev/input/$handler"
+        return when {
+            synchronized(lock) { handler in contested } -> null
+            synchronized(lock) { handler in preopened } -> path
+            File(path).canRead() -> path
+            else -> null
+        }
+    }
 
     private fun problem(message: String) {
         synchronized(lock) {
@@ -499,5 +586,6 @@ class BridgeService() : IBridgeService.Stub() {
         const val MAX_GUITARS = 8
         const val DISCOVERY_INTERVAL_MS = 1500L
         const val BATTERY_REFRESH_ROUNDS = 20 // about every 30 s
+        const val EBUSY = 16
     }
 }

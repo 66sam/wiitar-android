@@ -132,7 +132,8 @@ fun ControlsScreen(state: BridgeUiState, onBack: () -> Unit) {
                     TouchStripMode.WHAMMY -> "The strip works as the whammy bar when the real one isn't readable."
                     TouchStripMode.OFF -> "Ignored."
                 } + if (source == GuitarSource.ODIN_GUITAR) {
-                    " On this device the strip only reports left/centre/right, so “Press frets” can't tell sections apart."
+                    " On this device the strip only reports left/centre/right, so “Press frets” can't tell sections " +
+                        "apart, and the real whammy bar isn't available: choose Whammy to use the strip instead."
                 } else {
                     ""
                 },
@@ -149,8 +150,6 @@ fun ControlsScreen(state: BridgeUiState, onBack: () -> Unit) {
             SecondaryButton("Reset buttons") { update { it.copy(buttons = "") } }
         }
 
-        if (io.wiitar.app.OdinMapping.isPresent(context)) OdinPanel(context)
-
         Panel {
             ToggleRow(
                 "Hide the guitar's own device",
@@ -158,51 +157,6 @@ fun ControlsScreen(state: BridgeUiState, onBack: () -> Unit) {
                 config.hideGuitar,
             ) { on -> update { it.copy(hideGuitar = on) } }
         }
-    }
-}
-
-/**
- * AYN Odin only: ask com.odin.mapping to leave Wii guitars alone, so the bridge
- * reads the kernel's guitar device with the real whammy and full touch strip.
- */
-@Composable
-private fun OdinPanel(context: android.content.Context) {
-    var note by remember { mutableStateOf("") }
-    var blacklisted by remember { mutableStateOf<Boolean?>(null) }
-    LaunchedEffect(Unit) {
-        io.wiitar.app.OdinMapping.call(context, "getBlackListDeviceNames", null) { result ->
-            blacklisted = result.contains(io.wiitar.app.OdinMapping.GUITAR_NAME)
-            note = "Odin's ignore list: $result"
-        }
-    }
-    Panel {
-        Heading("AYN Odin: real whammy")
-        Text(
-            "The Odin's controller mapping hides the guitar and passes on a copy without the whammy bar " +
-                "or the full touch strip. Turn this on to put Wii guitars on its ignore list, then turn the " +
-                "Wii Remote off and on again. Turn it off to undo.",
-            Type.dim,
-        )
-        ToggleRow(
-            "Let Wiitar handle Wii guitars",
-            when (blacklisted) {
-                true -> "On: the Odin leaves Wii guitars alone."
-                false -> "Off: the Odin's mapping handles Wii guitars."
-                null -> "Checking…"
-            },
-            blacklisted == true,
-        ) { on ->
-            val method = if (on) "addBlackListDeviceName" else "removeBlackListDeviceName"
-            note = "Asking the Odin…"
-            io.wiitar.app.OdinMapping.call(context, method, io.wiitar.app.OdinMapping.GUITAR_NAME) { result ->
-                note = result
-                io.wiitar.app.OdinMapping.call(context, "getBlackListDeviceNames", null) { list ->
-                    blacklisted = list.contains(io.wiitar.app.OdinMapping.GUITAR_NAME)
-                    note = "$result. Odin's ignore list: $list. Now turn the Wii Remote off and on again."
-                }
-            }
-        }
-        if (note.isNotEmpty()) Text(note, Type.mono)
     }
 }
 

@@ -151,6 +151,13 @@ fun HomeScreen(state: BridgeUiState, onAdvanced: () -> Unit) {
                     }
                     GuitarView(live)
                     Text("In your game, bind the controller named “Wiitar Guitar $slot”.", Type.dim)
+                    if (live[LiveState.KERNEL_SOURCE] == 0) {
+                        // Reading the Odin's copy of the guitar, which has no whammy and a 3-position touch strip.
+                        Text(
+                            "Whammy and touch strip frets are off for this guitar. Turn the Wii Remote off and on to get them back.",
+                            Type.dim.copy(color = Palette.amber),
+                        )
+                    }
                 }
             }
         }

@@ -126,11 +126,8 @@ class ProbeActivity : Activity() {
     private fun runProbe() {
         val service = shell ?: return status("Connect to Shizuku first.")
         output = StringBuilder()
-        status("Running probe…")
+        status("Running probe… keep moving the whammy bar for the first 10 seconds.")
         background {
-            if (OdinMapping.isPresent(this)) {
-                append("\n===== Odin mapping app interface (reflection) =====\n" + compact(OdinMapping.describe(this)))
-            }
             append("\n===== hidden Bluetooth socket APIs (reflection, app process) =====\n" + bluetoothSocketApis())
             for ((title, command) in PROBE_COMMANDS) {
                 val result = try {
@@ -210,16 +207,20 @@ class ProbeActivity : Activity() {
          * command's output is capped (see [run]) and long lines are cut.
          */
         val PROBE_COMMANDS = listOf(
-            // Whammy on the Odin: how does com.odin.mapping decide which devices to hide and republish?
-            "Odin mapping app" to "p=\$(pm path com.odin.mapping | head -1 | cut -d: -f2); echo \$p; " +
-                "dumpsys package com.odin.mapping | grep -iE 'versionName|Provider|Receiver|Service|permission' | head -40",
-            "Odin mapping strings" to "p=\$(pm path com.odin.mapping | head -1 | cut -d: -f2); " +
-                "for d in \$(unzip -l \$p | grep -oE 'classes[0-9]*\\.dex'); do unzip -p \$p \$d | strings; done | " +
-                "grep -iE 'exclude|blacklist|whitelist|ignore|grab|wiimote|nintendo|057e|guitar|persist\\.|/dev/input|unlink|hidraw|uinput|settings' | " +
-                "sort -u | head -150",
+            // Whammy on the Odin, bypassing the hidden guitar device: the Wii Remote's raw HID reports.
+            "Wii Remote raw HID channel" to "for d in /sys/bus/hid/devices/*:057E:0306.*; do echo \"\$d -> \$(ls \$d/hidraw 2>&1)\"; done; " +
+                "for f in /dev/hidraw*; do echo \"\$(ls -l \$f 2>&1) \$(if [ -r \$f ]; then echo readable; else echo NOT readable; fi)\"; done",
+            // Report id, buttons, then the first 6 extension bytes (mode 0x35); the accelerometer is left out so
+            // identical lines collapse. Whammy is in extension byte 3.
+            "Raw Wii Remote reports (6 s, move the whammy bar)" to "h=\$(ls /sys/bus/hid/devices/*:057E:0306.*/hidraw 2>/dev/null | head -1); " +
+                "echo \"node: /dev/\$h\"; f=/data/local/tmp/wiitar-raw.bin; timeout 6 cat /dev/\$h > \$f; " +
+                "echo \"bytes: \$(wc -c < \$f)\"; od -An -tx1 -w22 -v \$f | head -3; echo ...; " +
+                "od -An -tx1 -w22 -v \$f | awk '{print \$1, \$2, \$3, \$7, \$8, \$9, \$10, \$11, \$12}' | uniq | head -60; rm -f \$f",
+            "Who hides the guitar device (log)" to "logcat -d -b main,system,events 2>/dev/null | " +
+                "grep -iE 'event13|Wii Remote|blacklist|hold_dev|uinput|unlink|EVIOCGRAB' | tail -40",
             "Odin system properties" to "getprop | grep -iE 'odin|ayn|mapping|gamepad' | head -60",
             "Odin-related settings" to "for ns in global system secure; do " +
-                "settings list \$ns | grep -v '^Phenotype' | grep -iE 'ayn|odin|gamepad|controller|joystick|keymap|mapping' | " +
+                "settings list \$ns | grep -v '^Phenotype' | grep -iE 'ayn|odin|gamepad|controller|joystick|keymap|mapping|black|wii|nintendo' | " +
                 "sed \"s/^/\$ns: /\"; done",
             // Research: could the bridge talk to the Wii Remote directly (raw L2CAP) instead of via the kernel?
             "Shell Bluetooth permissions" to "dumpsys package com.android.shell | grep -iE 'android.permission.BLUETOOTH' | sort -u",
