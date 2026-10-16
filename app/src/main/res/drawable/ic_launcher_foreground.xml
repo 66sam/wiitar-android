@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Outline of a guitar controller in amp-amber, five fret buttons in their
+     colours, on the dark Wiitar background. 108dp adaptive-icon canvas; the
+     drawing is scaled to stay inside the 66dp safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <group
+        android:pivotX="57"
+        android:pivotY="54"
+        android:rotation="-40"
+        android:scaleX="0.78"
+        android:scaleY="0.78"
+        android:translateX="-3">
+
+        <!-- Body: small upper bout, waist, larger lower bout -->
+        <path
+            android:pathData="M56,50 C54,44 49,42 45,45 C42,47 40,41 32,41 C22,40 19,50 20,55 C21,64 27,69 34,68 C40,67 42,62 45,63 C49,66 54,63 56,58 Z"
+            android:strokeWidth="3"
+            android:strokeColor="#F2A93B"
+            android:strokeLineJoin="round" />
+
+        <!-- Neck -->
+        <path
+            android:pathData="M56,51.5 L86,51.5 M56,56.5 L86,56.5"
+            android:strokeWidth="3"
+            android:strokeColor="#F2A93B"
+            android:strokeLineCap="round" />
+
+        <!-- Headstock -->
+        <path
+            android:pathData="M86,49 L93,48 Q95,48 95,50 L95,58 Q95,60 93,60 L86,59 Z"
+            android:strokeWidth="3"
+            android:strokeColor="#F2A93B"
+            android:strokeLineJoin="round" />
+
+        <!-- Strum bar -->
+        <path
+            android:pathData="M37,49 L37,60"
+            android:strokeWidth="3.6"
+            android:strokeColor="#F2A93B"
+            android:strokeLineCap="round" />
+
+        <!-- Fret buttons: green, red, yellow, blue, orange -->
+        <path android:fillColor="#3DBE5A" android:pathData="M63,54m-2.3,0a2.3,2.3 0,1 1,4.6 0a2.3,2.3 0,1 1,-4.6 0" />
+        <path android:fillColor="#E5484D" android:pathData="M68,54m-2.3,0a2.3,2.3 0,1 1,4.6 0a2.3,2.3 0,1 1,-4.6 0" />
+        <path android:fillColor="#F5C518" android:pathData="M73,54m-2.3,0a2.3,2.3 0,1 1,4.6 0a2.3,2.3 0,1 1,-4.6 0" />
+        <path android:fillColor="#3B82F6" android:pathData="M78,54m-2.3,0a2.3,2.3 0,1 1,4.6 0a2.3,2.3 0,1 1,-4.6 0" />
+        <path android:fillColor="#F28C28" android:pathData="M83,54m-2.3,0a2.3,2.3 0,1 1,4.6 0a2.3,2.3 0,1 1,-4.6 0" />
+    </group>
+</vector>

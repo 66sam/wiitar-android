@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Android 11 and lower: classic Bluetooth permissions, location needed to scan. -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
+
+    <!-- Android 12+ -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation"
+        tools:targetApi="s" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <uses-feature android:name="android.hardware.bluetooth" android:required="true" />
+
+    <!-- To tell "Shizuku not installed" from "not running". -->
+    <queries>
+        <package android:name="moe.shizuku.privileged.api" />
+        <!-- AYN Odin controller mapping, which hides Wii guitars (see OdinMapping). -->
+        <package android:name="com.odin.mapping" />
+    </queries>
+
+    <application
+        android:name=".WiitarApp"
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="Wiitar"
+        android:theme="@android:style/Theme.DeviceDefault.DayNight">
+
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".PairingActivity"
+            android:label="Pair a Wii Remote"
+            android:exported="false" />
+
+        <activity
+            android:name=".GuidedTestActivity"
+            android:label="Guided guitar test"
+            android:exported="false" />
+
+        <activity
+            android:name=".ProbeActivity"
+            android:label="Whammy &amp; tilt probe (Shizuku)"
+            android:exported="false" />
+
+        <receiver
+            android:name=".AutoStartReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
+            </intent-filter>
+        </receiver>
+
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:enabled="true"
+            android:exported="true"
+            android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
+        <activity
+            android:name=".InputDiagnosticsActivity"
+            android:label="Input diagnostics"
+            android:exported="false" />
+    </application>
+</manifest>
