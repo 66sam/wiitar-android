@@ -73,10 +73,14 @@ No fret uses B, because Android treats an unused B as "Back".
 
 ### AYN Odin note
 
-The Odin's controller layer hides the guitar's own input device and passes on
-a copy without the whammy bar, and with a touch strip that only reports
-left/centre/right. Set the touch strip to *whammy* (Advanced → Controls) to
-use the strip as whammy on this device.
+The Odin's controller layer takes over Wii guitars: about 0.2 s after the
+guitar's input device appears, it deletes the device's node and republishes
+the guitar without the whammy bar, and with a touch strip that only reports
+left/centre/right. While the bridge runs, Wiitar watches `/dev/input` and opens
+the guitar the moment it appears, so the whammy bar and the full touch strip
+work. *Advanced → Latency & status* shows `KERNEL_GUITAR` when this worked. If
+it shows `ODIN_GUITAR`, turn the Wii Remote off and on again, or set the touch
+strip to *whammy* to use the strip instead.
 
 ## Multiplayer
 
