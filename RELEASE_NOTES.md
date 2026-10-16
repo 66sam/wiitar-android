@@ -6,6 +6,7 @@ the whammy bar works and the touch strip presses individual frets. Check
 *Advanced → Latency & status*: it shows `KERNEL_GUITAR` when this worked.
 
 Also in this release:
+- The guitar picture on the home screen shows the analog stick.
 - Every build's release APK is now signed with the release key, so test
   builds install over a released copy.
 - The Wii Remote's light session is released properly when a guitar

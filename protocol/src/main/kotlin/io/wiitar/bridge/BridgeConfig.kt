@@ -87,7 +87,7 @@ object Profiles {
  * binder cheaply for the on-screen guitar. Floats are scaled by 1000.
  */
 object LiveState {
-    const val SIZE = 12
+    const val SIZE = 14
 
     const val SLOT = 0
     const val FRETS = 1 // bit per Fret.ordinal (buttons and, in FRETS mode, the touch strip)
@@ -101,6 +101,8 @@ object LiveState {
     const val KERNEL_SOURCE = 9 // 1 = kernel guitar device, 0 = the Odin's copy
     const val TOUCH_PRESENT = 10 // 1 once a touch strip has been seen
     const val BATTERY = 11 // percent, or -1 if unknown
+    const val STICK_X = 12 // -1000..1000
+    const val STICK_Y = 13 // -1000..1000, positive down as on a gamepad
 
     const val NO_TOUCH = -9999
 
@@ -121,6 +123,8 @@ object LiveState {
             if (kernelSource) 1 else 0,
             if (touchSeen) 1 else 0,
             battery,
+            (s.stickX * 1000).toInt(),
+            (s.stickY * 1000).toInt(),
         )
     }
 }

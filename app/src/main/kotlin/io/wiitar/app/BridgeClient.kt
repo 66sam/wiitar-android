@@ -25,7 +25,7 @@ import java.util.concurrent.Executors
  */
 object BridgeClient {
     /** Bump whenever BridgeService or its AIDL changes, so Shizuku replaces a running old daemon. */
-    private const val SERVICE_VERSION = 12
+    private const val SERVICE_VERSION = 13
     private const val REQUEST_SHIZUKU = 44
     const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
 

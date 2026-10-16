@@ -43,6 +43,8 @@ class BridgeConfigTest {
         assertEquals(-1, live[LiveState.TILT])
         assertEquals(-1, live[LiveState.WHAMMY])
         assertEquals(LiveState.NO_TOUCH, live[LiveState.TOUCH])
+        assertEquals(0, live[LiveState.STICK_X])
+        assertEquals(0, live[LiveState.STICK_Y])
     }
 }
 

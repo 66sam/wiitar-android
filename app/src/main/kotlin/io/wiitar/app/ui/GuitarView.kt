@@ -23,7 +23,7 @@ import io.wiitar.protocol.Fret
 /**
  * A simple drawn guitar showing one guitar's [live] state (a [LiveState]
  * slice): frets light up in their colours, the strum bar shows direction,
- * plus the whammy, tilt meter and touch strip when available.
+ * plus the analog stick, whammy, tilt meter and touch strip when available.
  */
 @Composable
 fun GuitarView(live: IntArray, modifier: Modifier = Modifier) {
@@ -85,6 +85,19 @@ fun GuitarView(live: IntArray, modifier: Modifier = Modifier) {
         // Plus above, minus below.
         drawButtonGlyph(Offset(w * 0.80f, h * 0.30f), h * 0.05f, plus = true, lit = on(LiveState.PLUS))
         drawButtonGlyph(Offset(w * 0.80f, h * 0.70f), h * 0.05f, plus = false, lit = on(LiveState.MINUS))
+
+        // Analog stick: the knob follows it, amber once it's pushed.
+        val stickCenter = Offset(w * 0.865f, h * 0.40f)
+        val ring = h * 0.075f
+        val sx = live.getOrElse(LiveState.STICK_X) { 0 } / 1000f
+        val sy = live.getOrElse(LiveState.STICK_Y) { 0 } / 1000f
+        val pushed = sx * sx + sy * sy > 0.04f
+        drawCircle(Palette.panelRaised, ring, stickCenter)
+        drawCircle(Palette.line, ring, stickCenter, style = Stroke(width = 2f))
+        drawCircle(
+            if (pushed) Palette.amber else Palette.textDim, ring * 0.45f,
+            Offset(stickCenter.x + sx * ring * 0.6f, stickCenter.y + sy * ring * 0.6f),
+        )
 
         // Whammy bar swings down as it's pushed.
         val whammy = live.getOrElse(LiveState.WHAMMY) { -1 }
