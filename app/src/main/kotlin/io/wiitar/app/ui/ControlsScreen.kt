@@ -159,3 +159,81 @@ fun ControlsScreen(state: BridgeUiState, onBack: () -> Unit) {
         }
     }
 }
+
+@Composable
+private fun ControlRow(control: GuitarControl, binding: String, waiting: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (waiting) Palette.panelRaised else Palette.panel)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val fret = control.fret
+        Box(
+            Modifier
+                .size(14.dp)
+                .clip(CircleShape)
+                .background(if (fret != null) Palette.fret(fret) else Palette.textFaint),
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(control.label, Type.body.copy(fontWeight = FontWeight.SemiBold), Modifier.weight(1f))
+        Text(
+            if (waiting) "Press it now…" else binding,
+            if (waiting) Type.dim.copy(color = Palette.amber) else Type.mono,
+        )
+    }
+}
+
+@Composable
+private fun OutputButtons(mapping: io.wiitar.bridge.BridgeMapping, onChange: (ButtonLayout.Input, VirtualGamepad.Button?) -> Unit) {
+    var open by remember { mutableStateOf<ButtonLayout.Input?>(null) }
+    val dupes = ButtonLayout.duplicates(mapping)
+    ButtonLayout.Input.entries.forEach { input ->
+        val current = ButtonLayout.get(mapping, input)
+        Row(
+            Modifier.fillMaxWidth().clickable { open = if (open == input) null else input }.padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(input.label, Type.body, Modifier.weight(1f))
+            Text(
+                current?.name ?: "none",
+                Type.mono.copy(color = if (current != null && current in dupes) Palette.warn else Palette.amber),
+            )
+        }
+        if (open == input) {
+            val options: List<VirtualGamepad.Button?> =
+                VirtualGamepad.Button.entries + if (input == ButtonLayout.Input.TILT) listOf(null) else emptyList()
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                options.chunked(5).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        row.forEach { option ->
+                            val selected = option == current
+                            Box(
+                                Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .border(1.dp, if (selected) Palette.amber else Palette.line, RoundedCornerShape(6.dp))
+                                    .clickable {
+                                        onChange(input, option)
+                                        open = null
+                                    }
+                                    .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(option?.name ?: "none", Type.mono.copy(color = if (selected) Palette.amber else Palette.textDim))
+                            }
+                        }
+                        repeat(5 - row.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
+            }
+        }
+    }
+    if (dupes.isNotEmpty()) Text("Used twice: ${dupes.joinToString()}", Type.dim.copy(color = Palette.warn))
+    if (ButtonLayout.Input.entries.any { ButtonLayout.get(mapping, it) == VirtualGamepad.Button.B }) {
+        Text("B may act as Back in some games.", Type.dim.copy(color = Palette.warn))
+    }
+}
