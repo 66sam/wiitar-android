@@ -10,6 +10,11 @@ import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.content.Context
+import android.graphics.Color
+import android.hardware.input.InputManager
+import android.hardware.lights.LightState
+import android.hardware.lights.LightsRequest
+import android.os.Build
 import android.os.ParcelFileDescriptor
 import io.wiitar.bridge.BridgeConfig
 import io.wiitar.bridge.Codes
@@ -117,17 +122,55 @@ class BridgeService() : IBridgeService.Stub() {
         }
 
         /** Lights the Wii Remote's LEDs for this player (1-4 one LED, 5-8 pairs), if sysfs lets us. */
+        /** Held open while bridged: closing a lights session hands the LEDs back to Android. */
+        private var lightsSession: AutoCloseable? = null
+
+        /**
+         * Lights the Wii Remote's LEDs for this player (1-4 one LED, 5-8 pairs). Tries the
+         * sysfs LED files first (root-only on the Odin), then Android's input-device
+         * lights API with the shell user's permissions.
+         */
         fun setPlayerLeds() {
             val mask = OutputReports.playerLedMask(slot - 1)
             val leds = sysfs.resolve("leds").listFiles().orEmpty().sortedBy { it.name }
-            for ((i, led) in leds.filter { Regex(":p[0-3]$").containsMatchIn(it.name) }.withIndex()) {
-                try {
-                    led.resolve("brightness").writeText(if (mask and (1 shl i) != 0) "1" else "0")
-                } catch (e: Exception) {
-                    if (!ledWarning) problem("Can't set player LEDs: ${e.message}")
-                    ledWarning = true
-                    return
-                }
+                .filter { Regex(":p[0-3]$").containsMatchIn(it.name) }
+            val viaSysfs = leds.isNotEmpty() && leds.withIndex().all { (i, led) ->
+                runCatching { led.resolve("brightness").writeText(if (mask and (1 shl i) != 0) "1" else "0") }.isSuccess
+            }
+            if (viaSysfs) return
+            val error = setLedsWithLightsApi(mask)
+            if (error != null && !ledWarning) {
+                problem("Can't set player LEDs: $error")
+                ledWarning = true
+            }
+        }
+
+        /** @return null on success, else why not. */
+        @SuppressLint("NewApi", "MissingPermission")
+        private fun setLedsWithLightsApi(mask: Int): String? {
+            if (Build.VERSION.SDK_INT < 31) return "needs Android 12+"
+            val input = shellContext()?.getSystemService(InputManager::class.java) ?: return "no input service"
+            return try {
+                // Android doesn't say which input device belongs to which Wii Remote; match by order.
+                val remotes = input.inputDeviceIds.mapNotNull { input.getInputDevice(it) }
+                    .filter { it.name == GuitarDiscovery.REMOTE_NAME }.sortedBy { it.id }
+                // This session isn't in [sessions] yet while it's being opened; count those before it.
+                val index = synchronized(lock) { sessions.values.count { it !== this && it.devices.key < devices.key } }
+                val remote = remotes.getOrNull(index) ?: return "Wii Remote not found in Android's device list"
+                val lights = remote.lightsManager.lights.sortedBy { it.name }.take(4)
+                if (lights.isEmpty()) return "Android reports no lights on the Wii Remote"
+                val request = LightsRequest.Builder().apply {
+                    lights.forEachIndexed { i, light ->
+                        addLight(light, LightState.Builder().setColor(if (mask and (1 shl i) != 0) Color.WHITE else 0).build())
+                    }
+                }.build()
+                val session = remote.lightsManager.openSession()
+                session.requestLights(request)
+                lightsSession?.close()
+                lightsSession = session
+                null
+            } catch (e: Exception) {
+                e.toString()
             }
         }
 
@@ -173,6 +216,7 @@ class BridgeService() : IBridgeService.Stub() {
 
         fun close() {
             alive = false
+            runCatching { lightsSession?.close() }
             // Release the grab now rather than when the blocked reader thread next wakes up,
             // so a reopened session can take it again straight away.
             grabbedFd?.let { runCatching { Evdev.grab(it.fd, false) } }
@@ -319,6 +363,19 @@ class BridgeService() : IBridgeService.Stub() {
 
     override fun latency(): LongArray = synchronized(lock) { latency.summary() }
 
+    /**
+     * A context whose calls are attributed to com.android.shell, the package the shell uid
+     * actually owns, so system services' caller checks accept the shell user's permissions.
+     */
+    private fun shellContext(): Context? {
+        val base = context ?: return null
+        return try {
+            base.createPackageContext("com.android.shell", 0)
+        } catch (e: Exception) {
+            base
+        }
+    }
+
     override fun hostAddress(): String = try {
         val process = ProcessBuilder("settings", "get", "secure", "bluetooth_address").redirectErrorStream(true).start()
         val out = process.inputStream.bufferedReader().readText().trim()
@@ -336,12 +393,7 @@ class BridgeService() : IBridgeService.Stub() {
      */
     @SuppressLint("MissingPermission")
     override fun connectWiimotes(): String {
-        val base = context ?: return "No context in the bridge service."
-        val shell = try {
-            base.createPackageContext("com.android.shell", 0)
-        } catch (e: Exception) {
-            base
-        }
+        val shell = shellContext() ?: return "No context in the bridge service."
         val adapter = shell.getSystemService(BluetoothManager::class.java)?.adapter ?: return "No Bluetooth adapter."
         val wiimotes = try {
             adapter.bondedDevices.filter { WiimotePairing.isWiimoteName(it.name) }
