@@ -6,6 +6,10 @@ the whammy bar works and the touch strip presses individual frets. Check
 *Advanced → Latency & status*: it shows `KERNEL_GUITAR` when this worked.
 
 Also in this release:
+- If the guitar briefly drops off the Wii Remote, Wiitar picks the new
+  device up straight away instead of losing the whammy. If whammy is ever off
+  (for example right after updating Wiitar), the home screen says so: turn
+  the Wii Remote off and on to get it back.
 - The guitar picture on the home screen shows the analog stick.
 - Every build's release APK is now signed with the release key, so test
   builds install over a released copy.

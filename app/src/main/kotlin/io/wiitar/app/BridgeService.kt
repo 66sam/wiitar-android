@@ -329,11 +329,13 @@ class BridgeService() : IBridgeService.Stub() {
         val device = File("/sys/class/input/$handler/device")
         if (runCatching { device.resolve("name").readText().trim() }.getOrNull() != GuitarDiscovery.GUITAR_NAME) return false
         if (runCatching { device.resolve("id/vendor").readText().trim().toInt(16) }.getOrNull() != GuitarDiscovery.NINTENDO) return false
-        if (synchronized(lock) { !running || handler in preopened || inUse(handler) }) return false
+        // Handler names are reused, so identify the device by its sysfs path ("/devices/…/input/input128").
+        val sysfs = runCatching { device.canonicalPath.removePrefix("/sys") }.getOrNull() ?: return false
+        if (synchronized(lock) { !running || handler in preopened || inUse(sysfs) }) return false
         val fd = ParcelFileDescriptor.open(File("/dev/input/$handler"), ParcelFileDescriptor.MODE_READ_ONLY)
         val grabbed = config.hideGuitar && Evdev.load(nativeLibraryDir) == null && Evdev.grab(fd.fd, true) == 0
         synchronized(lock) {
-            if (handler in preopened || inUse(handler)) {
+            if (handler in preopened || inUse(sysfs)) {
                 runCatching { fd.close() }
                 return false
             }
@@ -342,7 +344,8 @@ class BridgeService() : IBridgeService.Stub() {
         return true
     }
 
-    private fun inUse(handler: String) = sessions.values.any { it.devices.guitar.eventHandler == handler }
+    /** Whether a live session reads the kernel input device at [sysfs]. */
+    private fun inUse(sysfs: String) = sessions.values.any { it.alive && it.devices.guitar.sysfs == sysfs }
 
     private fun discover() {
         val devices = KernelInputDevice.parseAll(File("/proc/bus/input/devices").readText())
@@ -353,9 +356,14 @@ class BridgeService() : IBridgeService.Stub() {
             preopened.keys.filter { it !in handlers }.forEach { runCatching { preopened.remove(it)?.fd?.close() } }
             contested.retainAll(handlers)
             val keys = found.map { it.key }.toSet()
-            // Drop guitars that disconnected or whose reader died.
+            // Drop guitars that disconnected or whose reader died, and ones whose guitar device was
+            // replaced (it dropped off the Wii Remote and came back) by a kernel device we can read.
+            val current = found.associateBy { it.key }
             sessions.entries.removeAll { (key, session) ->
-                (key !in keys || !session.alive).also { gone -> if (gone) session.close() }
+                val replaced = current[key]?.let {
+                    it.source == GuitarSource.KERNEL_GUITAR && it.guitar.sysfs != session.devices.guitar.sysfs
+                } == true
+                (key !in keys || !session.alive || replaced).also { gone -> if (gone) session.close() }
             }
             if (++discoveries % BATTERY_REFRESH_ROUNDS == 0) sessions.values.forEach { it.readBattery() }
             for (guitar in found) {
