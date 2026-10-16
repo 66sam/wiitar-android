@@ -1,277 +1,158 @@
-# wiitar-android
+# Wiitar
 
-Use a Wii Remote + Guitar Hero guitar as a game controller on Android
-(Clone Hero, YARG), with no PC and no adapter dongle.
+Play Clone Hero and YARG on Android with a Wii Guitar Hero guitar. No PC,
+no DolphinBar, no root.
 
-> **Status: early.** The Wiimote protocol layer (`:protocol`) is written and
-> unit-tested. The app currently has a pairing helper and an input
-> diagnostics screen. The next step depends on what the
-> [current on-device test](#current-on-device-test) shows; see the
-> [Roadmap](#roadmap).
+Wiitar pairs the Wii Remote over Bluetooth, reads the guitar plugged into it
+and presents it to games as a standard controller, **"Wiitar Guitar 1"**
+(2, 3, … for more guitars). Every fret, strum, plus/minus and tilt for star
+power can be bound in the game's own controller settings.
 
-## How it works (and why it isn't the obvious design)
+> **Status: 0.1, early.** Tested on an AYN Odin 3 Max (Android 15). Other
+> devices with a recent Android kernel should work, but haven't been tried.
+> Reports are welcome. See [Reporting a problem](#reporting-a-problem).
 
-The obvious design is "open L2CAP sockets to the Wiimote from an app, then
-inject gamepad events with an AccessibilityService". On stock Android neither
-half works:
+## What you need
 
-- **App-level L2CAP is Bluetooth LE only.** `BluetoothDevice.createL2capChannel()`
-  (API 29) opens LE credit-based channels. A Wiimote is classic Bluetooth
-  (BR/EDR) HID on PSMs 0x11/0x13, which apps can't open and which the
-  system's HID service already holds. This is why Dolphin on Android supports
-  real Wiimotes only through a DolphinBar.
-- **An AccessibilityService can't create a gamepad.** It can dispatch
-  gestures and global actions, but it can't register an input device or send
-  key/axis events to another app. Clone Hero and YARG (Unity) only see real
-  `InputDevice`s.
+- A **Guitar Hero guitar for Wii** (GH3, World Tour, GH5, Band Hero, Warriors
+  of Rock) and a **Wii Remote** to plug into it. Rock Band Wii guitars use a
+  USB dongle instead and aren't supported.
+- An Android 10+ device.
+- **[Shizuku](https://shizuku.rikka.app/)** (free). It gives Wiitar the
+  permissions it needs to create a controller, without rooting. It's started
+  through Wireless debugging and has to be started again after each reboot.
 
-What *does* exist: Android's Generic Kernel Image ships the Linux
-`hid-wiimote` driver (`CONFIG_HID_WIIMOTE=y` in `gki_defconfig`). That driver
-handles Guitar Hero guitars, extension hot-plug, and one input device per
-Wiimote. Once Android's own Bluetooth stack pairs the Wiimote, every app
-should see it as a normal controller. The hard part is pairing (the Wiimote
-wants a binary PIN), which an app can supply via `BluetoothDevice.setPin()`.
+## Install
 
-So the plan has two paths:
+Download `wiitar-<version>.apk` from the
+[Releases](../../releases) page and open it on your device (allow installing
+from your browser or file manager when asked).
 
-| | Non-root (default) | Root (optional) |
-|---|---|---|
-| Connection | System Bluetooth HID host + kernel `hid-wiimote` | `/dev/hidraw*` for the Wiimote |
-| Decoding | kernel driver | this repo's `:protocol` module |
-| Output to games | the kernel's input device | virtual gamepad via `/dev/uinput` |
-| Remapping | in Clone Hero / YARG's own binding screens | in-app, any input to any button/axis |
-| Touch strip, tilt tuning | whatever the kernel exposes | full |
-| App's job | pairing helper, slot/LED view, diagnostics | everything |
+## Set up
 
-Both paths still need hardware confirmation. That is the next step.
+1. **Install and start Shizuku** (in the Shizuku app: *Start via Wireless
+   debugging*). Open Wiitar and tap **Allow** when it asks for Shizuku.
+2. **Pair the Wii Remote** once: on Wiitar's home screen tap *Pair a new Wii
+   Remote*.
+   - Choose **SYNC** (recommended), tap *Fill in automatically*, open the Wii
+     Remote's battery cover and press the red **SYNC** button, then tap the
+     Wii Remote in the list.
+   - After that, pressing any button on the Wii Remote reconnects it.
+   - Wii Remotes need a special binary PIN that Android's own pairing dialog
+     can't take. Wiitar answers it for you.
+3. **Plug the guitar into the Wii Remote.** The bridge starts by itself, and
+   the home screen shows the guitar live, with battery level.
+4. **In the game**, open the controller settings and bind the controller
+   named *Wiitar Guitar 1*. In Clone Hero it can show up as player 2.
 
-## Installing
-
-Every push is built by GitHub Actions. Open the repository's **Actions** tab,
-pick the latest **Build** run, and download the `wiitar-debug-apk` artifact
-(a zip containing the APK). Sideload it, e.g. `adb install app-debug.apk`.
-
-To build it yourself: open the project in Android Studio, or run
-`./gradlew :app:assembleDebug` with `ANDROID_HOME` set.
-
-## Pairing
-
-Wii Remotes use legacy Bluetooth PIN pairing with a **6-byte binary PIN**,
-which can't be typed into Android's PIN dialog. The app's pairing helper
-answers the request itself (`BluetoothDevice.setPin`):
-
-| How you make it discoverable | PIN | After pairing |
-|---|---|---|
-| Hold **1 + 2** | the Wii Remote's address, byte-reversed | press 1+2 again each session |
-| Press red **SYNC** | *this device's* address, byte-reversed | the Wii Remote remembers it and reconnects on any button press |
-
-Android doesn't let apps read the device's own Bluetooth address. For SYNC
-pairing, copy it from **Settings → About phone → Status → Bluetooth address**
-into the app once.
-
-Steps:
-1. Plug the guitar into the Wii Remote.
-2. Open Wiitar → **Pair a Wii Remote**, choose the method, and grant the
-   Bluetooth permission.
-3. Put the Wii Remote in pairing mode (the LEDs blink for about 20 s), then
-   tap **Scan**.
-4. Tap the ★ Nintendo RVL-CNT-01 entry. If Android also shows a PIN dialog,
-   leave it alone. The log should show `setPin(...) → true`, then
-   `bonding → bonded`.
-5. If it was already paired from an earlier attempt, first remove it in
-   Android's Bluetooth settings.
-
-## Current on-device test
-
-After pairing, open **Input diagnostics**. Press every fret, strum both ways,
-press plus/minus, move the whammy and stick, tilt the guitar, and slide the
-touch strip if there is one. Then tap **Copy report** and paste the text into
-an issue or chat. It shows:
-- which input devices the kernel created (we hope for "Nintendo Wii Remote"
-  plus a guitar device, vendor 057e);
-- the key codes, scan codes and axes each control produces.
-
-That shows whether the non-root path is enough (Clone Hero / YARG will see
-exactly these events) or whether the root uinput backend is needed.
-
-## Project layout
-
-```
-protocol/   Pure Kotlin, no Android dependencies. Wiimote report building/parsing,
-            extension detection and setup, guitar decoding, accelerometer tilt,
-            and a transport-agnostic session state machine. Fully unit tested.
-app/        Android app (minSdk 29): pairing helper and input diagnostics so far.
-            Plain platform widgets, no AndroidX. Only included in the build when an
-            Android SDK is configured.
-```
-
-### Protocol module overview
-
-- `OutputReports`: LEDs (0x11), report mode (0x12), status request (0x15),
-  memory write/read (0x16/0x17).
-- `InputReport.parse`: status (0x20), read data (0x21), ack (0x22), and
-  every data mode 0x30-0x37 and 0x3D. Accepts packets with or without the
-  0xA1 header.
-- `WiimoteSession`: on connect, sets the player LEDs and reads the
-  accelerometer calibration (EEPROM 0x0016). On every status report it
-  detects extension plug/unplug. Extension setup writes 0x55 → 0xA400F0 and
-  0x00 → 0xA400FB (no encryption), reads the 6-byte ID at 0xA400FA, then the
-  16-byte calibration block at 0xA40020. Finally it sets report mode 0x35
-  (buttons + accelerometer + 16 extension bytes). Unplug/replug resets this
-  and runs it again. Answers that belong to an extension that has since been
-  unplugged are ignored. Every byte in or out is emitted as an event for the
-  diagnostics screen.
-- `GuitarDecoder`: five frets, strum up/down, plus/minus, analog stick,
-  whammy, and the World Tour-style touch strip.
-- `TiltCalculator`: guitar tilt from the Wiimote accelerometer (the Wiimote
-  sits inside the guitar body). The axis and direction are configurable,
-  since they depend on how the Wiimote is mounted.
-
-Notes on the original spec:
-- Mode **0x34** is buttons + 19 extension bytes with *no* accelerometer. Tilt
-  needs the accelerometer, so the session uses **0x35**.
-- Guitar Hero guitars aren't documented to use the 0xA40020 calibration block.
-  It is always read and shown raw (with a checksum check) for diagnostics.
-  Whammy is calibrated from what the guitar actually reports: the first
-  sample is taken as rest, and the range widens as the bar is pressed.
-  Nothing is hardcoded to one guitar's values.
-- **Rock Band Wii guitars don't plug into a Wii Remote.** They use their own
-  USB dongle, so they can't be supported by this approach. On Wii, only
-  Guitar Hero-family guitars (GH3, World Tour, GH5, Band Hero, Warriors of
-  Rock) use the Wiimote extension port.
-
-### Building and testing
-
-```
-./gradlew :protocol:test
-```
-
-Requires JDK 17+. The protocol module builds without the Android SDK.
-
-Pairing PIN logic is in `WiimotePairing` (`:protocol`) and is unit tested.
-
-## Supported extension IDs
-
-| ID (0xA400FA-FF) | Device | Status |
-|---|---|---|
-| `00 00 a4 20 01 03` | Guitar Hero guitar (GH3, World Tour, GH5, Band Hero, WoR) | decoded |
-| `01 00 a4 20 01 03` | GH World Tour drums | detected only |
-| `03 00 a4 20 01 03` | DJ Hero turntable | detected only |
-| others | Nunchuk, Classic/Pro, Taiko, uDraw, MotionPlus | detected only |
-
-World Tour-style touch strips can't be told apart by ID. The decoder enables
-the strip once it has seen both the idle value (0x0F) and a touched value, so
-guitars without a strip are unaffected.
-
-## Known-compatible guitars
-
-| Guitar | Device / Android | Path | Result |
-|---|---|---|---|
-| Guitar Hero guitar (World Tour-style, with touch strip) | AYN Odin 3 Max, Android 15, kernel 6.6 (GKI) | kernel `hid-wiimote` alone | Frets, strum and plus/minus reach Android, but Clone Hero can't bind the frets. No whammy or tilt. |
-| same | same | Guitar bridge (Shizuku) | Clone Hero binds the frets on "Wiitar Guitar" (red after the B→X change, to confirm). Tilt works after calibration. No whammy (hidden by `com.odin.mapping`). |
-
-### Odin 3 Max mapping (non-root path)
-
-From the in-app guided test. The kernel creates two devices: "Nintendo Wii
-Remote" (057e:0306) and "Nintendo Wii Remote Guitar". Android reports the
-guitar as 2020:0111, an AYN ID, and gives it the same axis set as the Odin's
-built-in "Xbox" pad, so the Odin's controller layer probably re-presents it.
-
-| Guitar control | Android event |
-|---|---|
-| Green / Red / Yellow / Blue / Orange | `BUTTON_B` / `BUTTON_C` / `BUTTON_X` / `BUTTON_Y` / `BUTTON_Z` |
-| Strum up / down | `AXIS_HAT_Y` −1 / +1 |
-| Plus | `BUTTON_START` |
-| Minus | `BUTTON_START` in the guided test, `BUTTON_SELECT` in an earlier free test (to recheck) |
-| Touch strip | `AXIS_HAT_X` −1..+1 |
-| Stick | `AXIS_X`, `AXIS_Y` |
-| Whammy | nothing |
-| Tilt | nothing (no accelerometer device is exposed) |
-
-### Using the app
-
-The home screen walks through the three things needed: Shizuku running and
-allowed, a Wii Remote + guitar connected, and the bridge started. While the
-bridge runs, each connected guitar gets its own virtual controller ("Wiitar
-Guitar 1", "Wiitar Guitar 2", …). The home screen shows each one live, with a
-**Buzz** button that rumbles that Wii Remote so you can tell players apart.
-Guitars can connect and disconnect while the bridge runs.
-
-**Advanced** holds the rest:
-- **Controls**: tap a control, then press it on the guitar to assign it. Also
-  the touch-strip mode (axis / press frets / whammy / off), the gamepad
-  buttons each control sends, and the "hide the guitar's own device" option.
-- **Tilt**: two-step calibration (playing position, neck raised).
-- **Latency & status**: the bridge's own delay (guitar event → virtual
-  gamepad) and Android's (virtual gamepad → app), plus the bridge's status
-  for bug reports.
-- The pairing helper, guided test, input diagnostics and system probe used
-  during development.
-
-### Guitar bridge (no root, via Shizuku)
-
-The **Guitar bridge** screen starts a background service through
-[Shizuku](https://github.com/RikkaApps/Shizuku), which gives the app ADB-shell
-rights without root. The service reads the guitar's input devices and the
-Wii Remote's accelerometer from `/dev/input`, then creates a standard virtual
-gamepad named **"Wiitar Guitar"** through `/dev/uhid`:
+## Default layout
 
 | Guitar | "Wiitar Guitar" |
 |---|---|
 | Green / Red / Yellow / Blue / Orange | A / X / Y / LB / RB |
 | Strum up / down | D-pad up / down |
 | Plus / Minus | Start / Select |
-| Tilt (calibrated from two poses) | right stick Y (`AXIS_RZ`), and right-stick click past ~60% |
-| Whammy | right stick X (`AXIS_Z`), only where the kernel guitar device is readable |
-| Touch strip | `AXIS_RX` |
+| Tilt (after calibration) | right stick Y, and right-stick click past the threshold |
+| Whammy | right stick X (see the AYN Odin note) |
+| Touch strip | `AXIS_RX`, or frets, or whammy (your choice) |
 
-No fret uses B, because Android turns an unhandled `BUTTON_B` into Back.
+No fret uses B, because Android treats an unused B as "Back".
 
-While the bridge runs, it takes exclusive access (`EVIOCGRAB`, through a small
-JNI library) to the guitar's own input device, so games only see "Wiitar
-Guitar". On the Odin 3, Clone Hero otherwise binds the Odin's copy of the
-guitar, which sends `BUTTON_C`/`BUTTON_Z` for red and orange. Clone Hero can't
-bind those. The kernel releases the grab when the bridge stops.
+## Settings (Advanced)
 
-On the Odin 3, the system app `com.odin.mapping` hides the kernel guitar
-device (the one with whammy) and republishes it without whammy. So on that
-device the bridge has frets, strum, tilt and touch strip, but no whammy. In
-Clone Hero, "Wiitar Guitar" may appear as player 2.
+- **Controls**: tap a control, then press what you want on the guitar.
+  Choose the touch strip mode (axis, frets, whammy or off), and the gamepad
+  button each control sends. With several guitars, each can have its own
+  profile.
+- **Tilt**: two-step calibration (hold it as you play, then raise the neck).
+- **Auto-start**: start the bridge whenever a Wii Remote connects.
+- **Latency & status**: the bridge's own delay and Android's, plus status for
+  bug reports.
+- Pairing helper, guided guitar test, input diagnostics and a system probe,
+  for troubleshooting.
 
-## Adding support for a new guitar / extension ID
+### AYN Odin note
 
-1. Connect it and open the diagnostics screen. It shows the 6-byte extension
-   ID, the raw calibration block, and live extension bytes. Until the app
-   exists, the same data comes from `WiimoteEvent.ExtensionConnected` /
-   `RawInput`.
-2. If the ID isn't in the table, add it to `ExtensionType` in
-   `protocol/src/main/kotlin/io/wiitar/protocol/Extensions.kt`. If its data
-   uses the standard guitar layout (check the live bytes while pressing each
-   fret), use family `GUITAR`.
-3. If the layout differs, add a decoder next to `GuitarDecoder`, plus a unit
-   test built from the bytes you captured (see `GuitarTest`).
-4. Add a row to the compatibility table and open a PR.
+The Odin's built-in controller mapping app (`com.odin.mapping`) takes over
+Wii guitars and drops the whammy bar. Under *Advanced → Controls*, turn on
+**Let Wiitar handle Wii guitars**, then turn the Wii Remote off and on. This
+asks the Odin app to ignore Wii guitars only; your other controllers are
+unaffected, and turning the switch off undoes it. Until then, setting the
+touch strip to *whammy* is a workaround.
 
-## Roadmap
+## Multiplayer
 
-1. ✅ Protocol layer + unit tests
-2. ✅ Pairing helper (`setPin` with the reversed address) + input diagnostics
-3. ⏳ On-device test: does the kernel driver produce usable guitar input?
-   Then the per-player slot view and the protocol-level diagnostics screen
-4. Root backend: hidraw → `:protocol` → uinput virtual gamepad, plus a
-   remapping UI with "press the input to bind" capture, and per-device
-   settings
-5. Multiplayer: one virtual controller per Wiimote, with a slot assignment UI
+Pair more Wii Remotes the same way. Each guitar gets its own controller
+("Wiitar Guitar 2", …), its own player lights where the device allows it, and
+a *Buzz* button on the home screen to tell them apart.
 
-Each step ends with a request to test on real hardware.
+## Reporting a problem
+
+Open *Advanced → System probe* (and *Latency & status*), tap *Copy*, and paste
+the output into an issue with your device model and Android version.
+
+## How it works
+
+Apps can't open the classic-Bluetooth L2CAP channels a Wii Remote uses (that's
+why Dolphin needs a DolphinBar), and they can't create game controllers. But
+Android's kernel includes the Linux `hid-wiimote` driver. Once Android pairs
+the Wii Remote, the kernel exposes it, its accelerometer and its guitar as
+input devices.
+
+Wiitar's bridge runs as a Shizuku service with ADB-shell rights. It:
+
+- reads those devices from `/dev/input`;
+- takes exclusive access to the guitar's own device (`EVIOCGRAB`, via a small
+  JNI library), so games don't see two controllers;
+- computes tilt from the accelerometer;
+- creates one virtual gamepad per guitar through `/dev/uhid`.
+
+## Building
+
+```
+./gradlew :protocol:test :app:assembleDebug
+```
+
+- Needs JDK 17. The app needs the Android SDK and NDK (CMake); the protocol
+  module builds without them.
+- GitHub Actions builds debug and release APKs on every push.
+- The **Release** workflow (Actions → Release → Run workflow, or push a tag
+  `v*`) creates a draft release with the APK.
+- Releases are signed with the key in the `WIITAR_KEYSTORE_BASE64`,
+  `WIITAR_KEYSTORE_PASSWORD`, `WIITAR_KEY_ALIAS` and `WIITAR_KEY_PASSWORD`
+  secrets, or with the repo's debug key when those aren't set.
+
+### Layout
+
+```
+protocol/   Pure Kotlin, unit tested.
+            io.wiitar.protocol: Wii Remote reports, extension setup,
+            guitar decoding, tilt, pairing PINs.
+            io.wiitar.bridge: evdev/uhid formats, guitar → gamepad mapping,
+            settings and profiles.
+app/        Android app (Jetpack Compose UI), the Shizuku bridge service,
+            and a JNI helper for evdev ioctls.
+```
+
+### Supported extension IDs
+
+| ID (0xA400FA-FF) | Device | Status |
+|---|---|---|
+| `00 00 a4 20 01 03` | Guitar Hero guitar | supported |
+| `01 00 a4 20 01 03` | GH World Tour drums | detected only |
+| `03 00 a4 20 01 03` | DJ Hero turntable | detected only |
+
+To add a guitar variant, capture its bytes with the diagnostics screens. Then
+add the ID to `ExtensionType` (`protocol/.../Extensions.kt`) and a test like
+those in `GuitarTest`.
 
 ## References
 
 - WiiBrew: [Wiimote](https://wiibrew.org/wiki/Wiimote),
   [Extension Controllers](https://wiibrew.org/wiki/Wiimote/Extension_Controllers)
 - Linux `hid-wiimote` driver (`drivers/hid/hid-wiimote-*.c`)
+- [Shizuku](https://github.com/RikkaApps/Shizuku)
 
 ## License
 
-GPL-3.0-or-later. See [LICENSE](LICENSE). GPL-licensed Wiimote code (wiiuse,
-cwiid, the Linux driver) may be used as a reference.
+GPL-3.0-or-later. See [LICENSE](LICENSE).

@@ -18,14 +18,20 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Test protocol layer and build debug APK
-        run: ./gradlew --no-daemon :protocol:test :app:assembleDebug
+      - name: Test protocol layer and build APKs
+        run: ./gradlew --no-daemon :protocol:test :app:assembleDebug :app:assembleRelease
 
-      - name: Upload APK
+      - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: wiitar-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: wiitar-release-apk
+          path: app/build/outputs/apk/release/*.apk
 
       - name: Upload test reports
         if: failure()

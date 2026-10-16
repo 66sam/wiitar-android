@@ -40,11 +40,24 @@ android {
             keyAlias = "androiddebugkey"
             keyPassword = "android"
         }
+        // Release key from the environment (CI secrets). Without one, releases fall back to the
+        // debug key above, so they still install over test builds.
+        val releaseStore = System.getenv("WIITAR_KEYSTORE_FILE")
+        if (releaseStore != null && file(releaseStore).exists()) {
+            create("release") {
+                storeFile = file(releaseStore)
+                storePassword = System.getenv("WIITAR_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("WIITAR_KEY_ALIAS")
+                keyPassword = System.getenv("WIITAR_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
+            // No shrinking: the bridge calls hidden Android APIs and the Odin mapping app by reflection.
             isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 
@@ -58,6 +71,9 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 }
+
+// APKs come out as wiitar-<version>-<buildtype>.apk.
+base.archivesName.set("wiitar-${android.defaultConfig.versionName}")
 
 kotlin {
     compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) }
