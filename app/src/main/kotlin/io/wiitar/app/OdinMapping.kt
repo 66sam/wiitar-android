@@ -59,52 +59,59 @@ object OdinMapping {
             LIBRARY_PREFIXES.none { name.startsWith(it) }
         }
 
-    private val LIBRARY_PREFIXES = listOf("android.", "androidx.", "kotlin", "com.google.", "org.", "javax.", "okhttp3.", "okio.")
+    private val LIBRARY_PREFIXES = listOf("androidx.", "android.support.", "kotlin", "com.google.", "okhttp3.", "okio.")
 
-    /** A binder stub in the app and its transaction number → method name table. */
-    private class Stub(val className: String, val codes: Map<String, Int>)
+    /** A binder class in the app and its method name → transaction number table (empty if none was found). */
+    private class Stub(val cls: Class<*>, val codes: Map<String, Int>)
 
     private var stubs: List<Stub>? = null
 
-    /** Every binder stub in the app that names its transactions. Slow the first time: call off the main thread. */
+    /** Every binder class in the app, with its transaction names. Slow the first time: call off the main thread. */
     @Synchronized
     private fun stubs(context: Context): List<Stub> = stubs ?: run {
         val loader = PathClassLoader(apkPath(context), context.classLoader)
-        appClassNames(context).mapNotNull { name ->
-            val cls = runCatching { Class.forName(name, false, loader) }.getOrNull() ?: return@mapNotNull null
-            if (!Binder::class.java.isAssignableFrom(cls) || cls == Binder::class.java) return@mapNotNull null
-            val codes = transactionNames(cls)
-            if (codes.isEmpty()) null else Stub(name, codes)
-        }.also { stubs = it }
+        val binders = appClassNames(context).mapNotNull { name ->
+            runCatching { Class.forName(name, false, loader) }.getOrNull()
+                ?.takeIf { Binder::class.java.isAssignableFrom(it) && it != Binder::class.java }
+        }
+        binders.map { Stub(it, transactionNames(it)) }.also { stubs = it }
     }
 
-    /** Method name → transaction number, from TRANSACTION_* constants or a (int) → String name lookup. */
+    /**
+     * Method name → transaction number for binder class [cls]. AIDL stubs name their
+     * transactions in TRANSACTION_* constants and in an (int) → String lookup, which
+     * shrinking may leave on an abstract parent class; this looks there too.
+     */
     private fun transactionNames(cls: Class<*>): Map<String, Int> {
         val codes = HashMap<String, Int>()
-        for (field in runCatching { cls.declaredFields }.getOrDefault(emptyArray())) {
-            if (Modifier.isStatic(field.modifiers) && field.type == Int::class.javaPrimitiveType && field.name.startsWith("TRANSACTION_")) {
-                runCatching { field.isAccessible = true; codes[field.name.removePrefix("TRANSACTION_")] = field.getInt(null) }
-            }
-        }
-        val lookups = runCatching { cls.declaredMethods }.getOrDefault(emptyArray()).filter { m ->
-            m.returnType == String::class.java && m.parameterTypes.contentEquals(arrayOf(Int::class.javaPrimitiveType))
-        }
-        for (m in lookups) {
-            val target: Any? = if (Modifier.isStatic(m.modifiers)) null else allocate(cls) ?: continue
-            runCatching {
-                m.isAccessible = true
-                for (code in 1..MAX_TRANSACTION) {
-                    val name = m.invoke(target, code) as? String ?: continue
-                    if (name.isNotEmpty() && name.all { it.isLetterOrDigit() || it == '_' }) codes.putIfAbsent(name, code)
+        val instance by lazy { allocate(cls) }
+        var next: Class<*>? = cls
+        while (next != null && next != Binder::class.java) {
+            val k: Class<*> = next
+            for (field in runCatching { k.declaredFields }.getOrDefault(emptyArray())) {
+                if (Modifier.isStatic(field.modifiers) && field.type == Int::class.javaPrimitiveType && field.name.startsWith("TRANSACTION_")) {
+                    runCatching { field.isAccessible = true; codes[field.name.removePrefix("TRANSACTION_")] = field.getInt(null) }
                 }
             }
+            for (m in runCatching { k.declaredMethods }.getOrDefault(emptyArray())) {
+                if (m.returnType != String::class.java || !m.parameterTypes.contentEquals(arrayOf(Int::class.javaPrimitiveType))) continue
+                val target: Any? = if (Modifier.isStatic(m.modifiers)) null else instance ?: continue
+                runCatching {
+                    m.isAccessible = true
+                    for (code in 1..MAX_TRANSACTION) {
+                        val name = runCatching { m.invoke(target, code) as? String }.getOrNull() ?: continue
+                        if (name.isNotEmpty() && name.all { it.isLetterOrDigit() || it == '_' }) codes.putIfAbsent(name, code)
+                    }
+                }
+            }
+            next = k.superclass
         }
         return codes
     }
 
     /** An instance without running a constructor, for a name lookup that isn't static. */
     private fun allocate(cls: Class<*>): Any? = runCatching {
-        if (Modifier.isAbstract(cls.modifiers)) return null
+        if (Modifier.isAbstract(cls.modifiers) || cls.isInterface) return null
         val unsafeClass = Class.forName("sun.misc.Unsafe")
         val unsafe = unsafeClass.getDeclaredField("theUnsafe").apply { isAccessible = true }.get(null)
         unsafeClass.getMethod("allocateInstance", Class::class.java).invoke(unsafe, cls)
@@ -113,7 +120,7 @@ object OdinMapping {
     private fun codeFor(context: Context, method: String): Int? =
         stubs(context).firstNotNullOfOrNull { it.codes[method] }
 
-    /** For the probe: the service's exported state and the transaction tables found in the app. */
+    /** For the probe: the service, its interface name, and every binder class in the app with its transactions. */
     fun describe(context: Context): String = buildString {
         try {
             val services = context.packageManager.queryIntentServices(Intent(ACTION).setPackage(PACKAGE), 0)
@@ -121,14 +128,44 @@ object OdinMapping {
                 appendLine("service ${s.serviceInfo.name} exported=${s.serviceInfo.exported} permission=${s.serviceInfo.permission}")
             }
             if (services.isEmpty()) appendLine("service: not visible to this app")
+            appendLine("interface: ${interfaceDescriptor(context)}")
             val found = stubs(context)
-            if (found.isEmpty()) appendLine("no binder transaction tables found")
+            appendLine("${appClassNames(context).size} app classes, ${found.size} binder classes")
             for (stub in found) {
-                appendLine("${stub.className}:")
+                val c = stub.cls
+                val chain = generateSequence(c.superclass) { it.superclass }.takeWhile { it != Any::class.java }.joinToString(" < ") { it.name }
+                appendLine("${c.name}${if (Modifier.isAbstract(c.modifiers)) " [abstract]" else ""} < $chain")
+                appendLine("  implements ${c.interfaces.joinToString { it.name }}")
+                if (stub.codes.isEmpty()) {
+                    // No name table: list the methods so the transactions can be matched by hand.
+                    for (m in c.declaredMethods) appendLine("  ${m.name}(${m.parameterTypes.joinToString { it.simpleName }}): ${m.returnType.simpleName}")
+                }
                 for ((name, code) in stub.codes.entries.sortedBy { it.value }) appendLine("  $code $name")
             }
         } catch (e: Throwable) {
             appendLine("couldn't inspect $PACKAGE: $e")
+        }
+    }
+
+    /** Binds to the service and reads its interface name. Blocks for up to a few seconds. */
+    private fun interfaceDescriptor(context: Context): String {
+        val latch = java.util.concurrent.CountDownLatch(1)
+        var result = "no answer"
+        val connection = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+                result = runCatching { binder?.interfaceDescriptor ?: "none" }.getOrElse { it.toString() }
+                latch.countDown()
+            }
+
+            override fun onServiceDisconnected(name: ComponentName?) = Unit
+        }
+        return try {
+            if (!context.bindService(Intent(ACTION).setPackage(PACKAGE), connection, Context.BIND_AUTO_CREATE)) return "can't bind"
+            latch.await(3, java.util.concurrent.TimeUnit.SECONDS)
+            runCatching { context.unbindService(connection) }
+            result
+        } catch (e: Exception) {
+            e.toString()
         }
     }
 
