@@ -128,15 +128,15 @@ class ProbeActivity : Activity() {
         output = StringBuilder()
         status("Running probe…")
         background {
+            append("\n===== hidden Bluetooth socket APIs (reflection, app process) =====\n" + bluetoothSocketApis())
             for ((title, command) in PROBE_COMMANDS) {
                 val result = try {
                     service.run(command)
                 } catch (e: Exception) {
                     "[failed: $e]"
                 }
-                append("\n===== $title =====\n$ $command\n$result")
+                append("\n===== $title =====\n" + compact(result))
             }
-            append("\n===== hidden Bluetooth socket APIs (reflection, app process) =====\n" + bluetoothSocketApis())
             status("Probe done. Tap Copy output and send it back.")
         }
     }
@@ -153,6 +153,13 @@ class ProbeActivity : Activity() {
             append("\n===== raw input (10 s) =====\n$result")
             status("Recording done. Tap Copy output and send it back.")
         }
+    }
+
+    /** Keeps one section from swamping a pasted report: long lines cut, total capped. */
+    private fun compact(text: String): String {
+        val lines = text.lines().map { if (it.length > MAX_LINE) it.take(MAX_LINE) + "…" else it }
+        val joined = lines.joinToString("\n")
+        return if (joined.length > MAX_SECTION) joined.take(MAX_SECTION) + "\n[… cut]" else joined
     }
 
     /** Lists BluetoothDevice/BluetoothSocket methods that could open classic L2CAP channels. */
@@ -192,37 +199,40 @@ class ProbeActivity : Activity() {
         const val REQUEST_SHIZUKU = 42
         const val SERVICE_VERSION = 1
         const val SCREEN_CHARS = 20_000
+        const val MAX_LINE = 200
+        const val MAX_SECTION = 5_000
 
+        /**
+         * Most useful first, so a truncated paste still carries what matters. Every
+         * command's output is capped (see [run]) and long lines are cut.
+         */
         val PROBE_COMMANDS = listOf(
-            "identity" to "id",
-            "device nodes" to "ls -l /dev/uhid /dev/uinput /dev/hidraw* 2>&1; ls -l /dev/input/",
-            "access" to "for f in /dev/uhid /dev/uinput; do " +
-                "if [ -w \$f ]; then echo \"\$f writable\"; else echo \"\$f NOT writable\"; fi; done; " +
-                "for f in /dev/input/event*; do if [ -r \$f ]; then echo \"\$f readable\"; else echo \"\$f NOT readable\"; fi; done",
-            "kernel input devices" to "cat /proc/bus/input/devices",
-            "evdev capabilities" to "getevent -lp",
-            "HID devices and drivers" to "for d in /sys/bus/hid/devices/*; do echo \"\$d -> \$(readlink \$d/driver)\"; done",
-            "evdev nodes by name" to "for e in /sys/class/input/event*; do " +
-                "echo \"\${e##*/} dev=\$(cat \$e/dev) name=\$(cat \$e/device/name) node=\$(ls -l /dev/input/\${e##*/} 2>&1)\"; done",
-            "char devices 13:x outside /dev/input" to "ls -lR /dev 2>/dev/null | grep -E '^c.* 13, ' | grep -v ' event[0-9]' | head -20",
-            "AYN / Odin packages" to "pm list packages | grep -iE 'ayn|odin|gamepad|controller|keymap|input'",
-            "AYN / Odin processes" to "ps -A -o PID,USER,NAME | grep -iE 'ayn|odin|gamepad|controller|keymap|input'",
-            "Odin-related settings" to "for ns in global system secure; do " +
-                "settings list \$ns | grep -iE 'ayn|odin|gamepad|controller|joystick|keymap|mapping' | sed \"s/^/\$ns: /\"; done",
-            "Android input service" to "dumpsys input | grep -iE -A4 'Nintendo|Wiitar|Excluded|2020' | head -120",
             // Whammy on the Odin: how does com.odin.mapping decide which devices to hide and republish?
             "Odin mapping app" to "p=\$(pm path com.odin.mapping | head -1 | cut -d: -f2); echo \$p; " +
                 "dumpsys package com.odin.mapping | grep -iE 'versionName|Provider|Receiver|Service|permission' | head -40",
             "Odin mapping strings" to "p=\$(pm path com.odin.mapping | head -1 | cut -d: -f2); " +
                 "for d in \$(unzip -l \$p | grep -oE 'classes[0-9]*\\.dex'); do unzip -p \$p \$d | strings; done | " +
                 "grep -iE 'exclude|blacklist|whitelist|ignore|grab|wiimote|nintendo|057e|guitar|persist\\.|/dev/input|unlink|hidraw|uinput|settings' | " +
-                "sort -u | head -200",
+                "sort -u | head -150",
             "Odin system properties" to "getprop | grep -iE 'odin|ayn|mapping|gamepad' | head -60",
+            "Odin-related settings" to "for ns in global system secure; do " +
+                "settings list \$ns | grep -v '^Phenotype' | grep -iE 'ayn|odin|gamepad|controller|joystick|keymap|mapping' | " +
+                "sed \"s/^/\$ns: /\"; done",
             // Research: could the bridge talk to the Wii Remote directly (raw L2CAP) instead of via the kernel?
             "Shell Bluetooth permissions" to "dumpsys package com.android.shell | grep -iE 'android.permission.BLUETOOTH' | sort -u",
             "Wii Remote batteries" to "for f in /sys/class/power_supply/wiimote_battery_*; do echo \"\$f \$(cat \$f/capacity 2>&1)\"; done",
             "Wii Remote LEDs" to "for f in /sys/class/leds/*057E*/brightness; do " +
                 "if [ -w \$f ]; then echo \"\$f writable\"; else echo \"\$f NOT writable\"; fi; done",
+            "Android input service" to "dumpsys input | grep -iE -A4 'Nintendo|Wiitar|Excluded|2020' | head -80",
+            "evdev nodes by name" to "for e in /sys/class/input/event*; do " +
+                "echo \"\${e##*/} dev=\$(cat \$e/dev) name=\$(cat \$e/device/name) node=\$(ls -l /dev/input/\${e##*/} 2>&1)\"; done",
+            "identity" to "id",
+            "access" to "for f in /dev/uhid /dev/uinput; do " +
+                "if [ -w \$f ]; then echo \"\$f writable\"; else echo \"\$f NOT writable\"; fi; done; " +
+                "for f in /dev/input/event*; do if [ -r \$f ]; then echo \"\$f readable\"; else echo \"\$f NOT readable\"; fi; done",
+            "HID devices and drivers" to "for d in /sys/bus/hid/devices/*; do echo \"\$d -> \$(readlink \$d/driver)\"; done",
+            "AYN / Odin processes" to "ps -A -o PID,USER,NAME | grep -iE 'ayn|odin|gamepad|controller|keymap|input'",
+            "kernel input devices" to "grep -E '^(N|I|H|S):' /proc/bus/input/devices",
         )
     }
 }
