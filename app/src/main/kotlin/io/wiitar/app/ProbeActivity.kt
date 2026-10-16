@@ -217,9 +217,14 @@ class ProbeActivity : Activity() {
                 "for d in \$(unzip -l \$p | grep -oE 'classes[0-9]*\\.dex'); do unzip -p \$p \$d | strings; done | " +
                 "grep -iE 'exclude|blacklist|whitelist|ignore|grab|wiimote|nintendo|057e|guitar|persist\\.|/dev/input|unlink|hidraw|uinput|settings' | " +
                 "sort -u | head -150",
+            // Where the ignore list lives: settings keys, preference names, provider URIs near it in the code.
+            "Odin ignore-list storage" to "p=\$(pm path com.odin.mapping | head -1 | cut -d: -f2); " +
+                "for d in \$(unzip -l \$p | grep -oE 'classes[0-9]*\\.dex'); do unzip -p \$p \$d | strings; done | " +
+                "grep -iE 'black|content://|_prefs|shared_pref|preferences|Settings\\\$(Global|System|Secure)|getString|putString|aidl|Stub|Binder|onTransact|ApiService|IApi|IMapping' | " +
+                "grep -v 'font' | sort -u | head -120",
             "Odin system properties" to "getprop | grep -iE 'odin|ayn|mapping|gamepad' | head -60",
             "Odin-related settings" to "for ns in global system secure; do " +
-                "settings list \$ns | grep -v '^Phenotype' | grep -iE 'ayn|odin|gamepad|controller|joystick|keymap|mapping' | " +
+                "settings list \$ns | grep -v '^Phenotype' | grep -iE 'ayn|odin|gamepad|controller|joystick|keymap|mapping|black|wii|nintendo' | " +
                 "sed \"s/^/\$ns: /\"; done",
             // Research: could the bridge talk to the Wii Remote directly (raw L2CAP) instead of via the kernel?
             "Shell Bluetooth permissions" to "dumpsys package com.android.shell | grep -iE 'android.permission.BLUETOOTH' | sort -u",
