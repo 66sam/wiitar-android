@@ -152,7 +152,7 @@ class BridgeService() : IBridgeService.Stub() {
             val input = shellContext()?.getSystemService(InputManager::class.java) ?: return "no input service"
             return try {
                 // Android doesn't say which input device belongs to which Wii Remote; match by order.
-                val remotes = input.inputDeviceIds.mapNotNull { input.getInputDevice(it) }
+                val remotes = input.inputDeviceIds.toList().mapNotNull { input.getInputDevice(it) }
                     .filter { it.name == GuitarDiscovery.REMOTE_NAME }.sortedBy { it.id }
                 // This session isn't in [sessions] yet while it's being opened; count those before it.
                 val index = synchronized(lock) { sessions.values.count { it !== this && it.devices.key < devices.key } }
