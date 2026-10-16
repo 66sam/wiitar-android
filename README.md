@@ -120,7 +120,9 @@ Wiitar's bridge runs as a Shizuku service with ADB-shell rights. It:
   `v*`) creates a draft release with the APK.
 - Releases are signed with the key in the `WIITAR_KEYSTORE_BASE64`,
   `WIITAR_KEYSTORE_PASSWORD`, `WIITAR_KEY_ALIAS` and `WIITAR_KEY_PASSWORD`
-  secrets, or with the repo's debug key when those aren't set.
+  repository secrets; the Release workflow refuses to run without them.
+  Other builds use the committed debug key (`app/debug.keystore`), so release
+  and test builds can't be installed over each other.
 
 ### Layout
 

@@ -23,8 +23,8 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      # Optional secrets: WIITAR_KEYSTORE_BASE64, WIITAR_KEYSTORE_PASSWORD, WIITAR_KEY_ALIAS,
-      # WIITAR_KEY_PASSWORD. Without them the APK is signed with the repo's debug key.
+      # Secrets: WIITAR_KEYSTORE_BASE64, WIITAR_KEYSTORE_PASSWORD, WIITAR_KEY_ALIAS,
+      # WIITAR_KEY_PASSWORD. Releases must not use the public debug key, so they're required.
       - name: Release key
         env:
           KEYSTORE_BASE64: ${{ secrets.WIITAR_KEYSTORE_BASE64 }}
@@ -33,7 +33,8 @@ jobs:
             echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
             echo "WIITAR_KEYSTORE_FILE=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
           else
-            echo "::warning::No release key secrets; signing with the debug key."
+            echo "::error::Release key secrets are missing (see README, Building)."
+            exit 1
           fi
 
       - name: Test and build
