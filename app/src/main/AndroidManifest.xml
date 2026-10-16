@@ -19,8 +19,6 @@
     <!-- To tell "Shizuku not installed" from "not running". -->
     <queries>
         <package android:name="moe.shizuku.privileged.api" />
-        <!-- AYN Odin controller mapping, which hides Wii guitars (see OdinMapping). -->
-        <package android:name="com.odin.mapping" />
     </queries>
 
     <application

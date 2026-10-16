@@ -12,8 +12,6 @@ README for setup.
   per-guitar profiles, tilt calibration.
 - Multiple guitars, battery level, rumble to identify players, auto-start
   when a Wii Remote connects.
-- AYN Odin: option to stop the built-in mapping app taking over Wii guitars,
-  for real whammy.
 
 Tested on an AYN Odin 3 Max (Android 15). Known limits: player lights depend
 on the device, and drums aren't supported yet.
