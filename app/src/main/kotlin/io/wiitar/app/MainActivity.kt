@@ -126,8 +126,11 @@ fun rememberBridgeState(): State<BridgeUiState> {
                     guitars = guitars,
                     shizuku = BridgeClient.shizukuState(),
                     running = BridgeClient.running,
-                    wiimotes = countDevices { it == "Nintendo Wii Remote" },
-                    guitarAttached = countDevices { it.endsWith("Guitar") } > 0,
+                    // The bridge's own list is authoritative: on the Odin, Android's device list doesn't
+                    // reliably show the Wii Remote (devices get hidden/republished). Android's list is
+                    // the fallback for when the bridge isn't running.
+                    wiimotes = maxOf(guitars.size, countDevices { it.startsWith("Nintendo Wii Remote") && !it.endsWith("Guitar") }),
+                    guitarAttached = guitars.isNotEmpty() || countDevices { it.startsWith("Nintendo Wii Remote") && it.endsWith("Guitar") } > 0,
                 )
             }
             val service = BridgeClient.service
@@ -138,7 +141,13 @@ fun rememberBridgeState(): State<BridgeUiState> {
             }
             val size = io.wiitar.bridge.LiveState.SIZE
             val live = raw?.let { r -> (0 until r.size / size).map { r.copyOfRange(it * size, (it + 1) * size) } }.orEmpty()
-            state.value = slow.copy(running = BridgeClient.running, live = live)
+            // A guitar sending live data is connected, whatever the slower checks above last saw.
+            state.value = slow.copy(
+                running = BridgeClient.running,
+                live = live,
+                wiimotes = maxOf(slow.wiimotes, live.size),
+                guitarAttached = slow.guitarAttached || live.isNotEmpty(),
+            )
             delay(33)
         }
     }

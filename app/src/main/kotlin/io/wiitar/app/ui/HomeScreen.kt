@@ -104,7 +104,7 @@ fun HomeScreen(state: BridgeUiState, onAdvanced: () -> Unit) {
                                 connectNote = if (report.contains("connecting") || report.contains("already")) {
                                     "Connecting…"
                                 } else {
-                                    "Couldn't connect automatically ($report). Tap the Wii Remote in Bluetooth settings."
+                                    "Couldn't connect automatically: $report\nTap the Wii Remote in Bluetooth settings instead."
                                 }
                                 DiagnosticLog.add("[connect] $report")
                             }
