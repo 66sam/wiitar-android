@@ -129,7 +129,7 @@ class ProbeActivity : Activity() {
         status("Running probe…")
         background {
             if (OdinMapping.isPresent(this)) {
-                append("\n===== Odin mapping app interface (reflection) =====\n" + compact(OdinMapping.describe(this)))
+                append("\n===== Odin mapping app calls (binder transactions) =====\n" + compact(OdinMapping.describe(this)))
             }
             append("\n===== hidden Bluetooth socket APIs (reflection, app process) =====\n" + bluetoothSocketApis())
             for ((title, command) in PROBE_COMMANDS) {
